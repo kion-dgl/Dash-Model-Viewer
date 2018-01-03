@@ -1,5 +1,26 @@
+/*
+* Copyright 2017,2018 Benjamin Collins
+*
+*This file is part of Dash-Model-Viewer
+*
+* Dash-Model-Viewer is free software: you can redistribute it and/or modify it 
+* under the terms of the GNU General Public License as published by the Free 
+* Software Foundation, either version 3 of the License, or (at your option) any 
+* later version.
+*
+* Dash-Model-Viewer is distributed in the hope that it will be useful, but 
+* WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or 
+* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more 
+* details.
+*
+* You should have received a copy of the GNU General Public License along with 
+* Dash-Model-Viewer. If not, see http://www.gnu.org/licenses/.
+*/
+
+
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <epoxy/gl.h>
 #include <epoxy/glx.h>
 #include <gtk/gtk.h>
@@ -11,7 +32,9 @@ static void copy_bin_file(char *filename);
 
 struct {
 	FILE *fp;
+	uint8_t *buffer;
 	uint32_t file_len;
+	GtkWidget *listbox, *scrolled_window;
 } global;
 
 int main(int argc, char *argv[]) {
@@ -21,7 +44,6 @@ int main(int argc, char *argv[]) {
 	GtkWidget *hbox;
 	GtkWidget *open_file, *export_file;
 	GtkWidget *list_frame, *gl_frame;
-	GtkWidget *listbox, *scrolled_window;
 	GtkWidget *gl_area;
 
 	gtk_init(&argc, &argv);
@@ -62,12 +84,12 @@ int main(int argc, char *argv[]) {
 	list_frame = gtk_frame_new(NULL);
 	gtk_box_pack_start(GTK_BOX(hbox), list_frame, FALSE, FALSE, 10);
 
-	scrolled_window = gtk_scrolled_window_new(NULL, NULL);
-	listbox = gtk_list_box_new();
+	global.scrolled_window = gtk_scrolled_window_new(NULL, NULL);
+	global.listbox = gtk_list_box_new();
 
-	gtk_container_add(GTK_CONTAINER(list_frame), scrolled_window);
-	gtk_container_add(GTK_CONTAINER(scrolled_window), listbox);
-	gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(scrolled_window), 80);
+	gtk_container_add(GTK_CONTAINER(list_frame), global.scrolled_window);
+	gtk_container_add(GTK_CONTAINER(global.scrolled_window), global.listbox);
+	gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(global.scrolled_window), 110);
 
 	// Create GLArea Frame
 
@@ -80,6 +102,10 @@ int main(int argc, char *argv[]) {
 	g_signal_connect(GTK_WIDGET(gl_area), "realize", G_CALLBACK(on_realize), NULL);
 	g_signal_connect(GTK_WIDGET(gl_area), "realize", G_CALLBACK(on_render), NULL);
 	gtk_container_add(GTK_CONTAINER(gl_frame), gl_area);
+
+	// Attempt to open default file
+
+	copy_bin_file("ST00_01.BIN");
 
 	// Show all widgets and start program
 
@@ -148,6 +174,9 @@ static void copy_bin_file(char *filename) {
 
 	if(global.fp != NULL) {
 		fclose(global.fp);
+		free(global.buffer);
+	} else {
+		g_print("Global file pointer is currently null\n");
 	}
 
 	/*
@@ -170,14 +199,58 @@ static void copy_bin_file(char *filename) {
 
 	// Read file as buffer
 
-	uint8_t *buffer;
-	buffer = malloc(global.file_len);
-	fread(buffer, sizeof(uint8_t), global.file_len, fp);
-	global.fp = fmemopen(buffer, global.file_len, "r");
+	global.buffer = malloc(global.file_len);
+	fread(global.buffer, sizeof(uint8_t), global.file_len, fp);
+	global.fp = fmemopen(global.buffer, global.file_len, "r");
 
 	// Free memory and close file handler
 
-	free(buffer);
 	fclose(fp);
+	g_print("File Open in memory\n");
+
+	// Attempt to read EBD in Archive
+	
+	if(global.file_len < 0x800) {
+		return;
+	}
+
+	char asset_name[0x20];
+	fseek(global.fp, 0x40, SEEK_SET);
+	fread(asset_name, sizeof(char), 0x20, global.fp);
+
+	char *dot = strrchr(asset_name, '.');
+	if(dot == NULL) {
+		fprintf(stderr, "Could not find extension\n");
+		return;
+	}
+	
+	g_print("Asset Name: %s\n", asset_name);
+	g_print("Extension: '%s'\n", dot);
+
+	if(strcmp(dot, ".EBD") != 0) {
+		fprintf(stderr, "Assets extension is not EBD\n");
+		return;
+	}
+
+	fseek(global.fp, 0x800, SEEK_SET);
+	uint32_t nb_models;
+	fread(&nb_models, sizeof(uint32_t), 1, global.fp);
+	
+	char mdl_label[0x20];
+	int i;
+
+	g_print("Number of models: %d\n", nb_models);
+
+	GtkWidget *row, *label;
+	for(i = 0; i < nb_models; i++) {
+		sprintf(mdl_label, "Model %03d", i);
+		
+		label = gtk_label_new(mdl_label);
+		gtk_widget_set_halign (GTK_WIDGET(label), GTK_ALIGN_START);
+
+		row = gtk_list_box_row_new();
+		gtk_container_add(GTK_CONTAINER(row), label);
+		gtk_container_add(GTK_CONTAINER(global.listbox), row);
+	}
 
 }
