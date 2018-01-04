@@ -29,12 +29,22 @@ static void on_realize(GtkGLArea *gl_area);
 static void on_render(GtkGLArea *gl_area, GdkGLContext *context);
 static void open_file_click(GtkButton *button, gpointer data);
 static void copy_bin_file(char *filename);
+static void row_select_callback(GtkListBox *box, GtkListBoxRow *row, gpointer user_data);
+
+struct ModelAddress {
+	uint32_t enemy_type;
+	uint32_t mesh_ofs;
+	uint32_t anim_ofs;
+	uint32_t bone_ofs;
+};
 
 struct {
 	FILE *fp;
 	uint8_t *buffer;
 	uint32_t file_len;
-	GtkWidget *listbox, *scrolled_window;
+	GtkWidget *listbox;
+	uint32_t memory_ofs;
+	struct ModelAddress *file_ofs;
 } global;
 
 int main(int argc, char *argv[]) {
@@ -44,6 +54,7 @@ int main(int argc, char *argv[]) {
 	GtkWidget *hbox;
 	GtkWidget *open_file, *export_file;
 	GtkWidget *list_frame, *gl_frame;
+	GtkWidget *scrolled_window;
 	GtkWidget *gl_area;
 
 	gtk_init(&argc, &argv);
@@ -84,12 +95,14 @@ int main(int argc, char *argv[]) {
 	list_frame = gtk_frame_new(NULL);
 	gtk_box_pack_start(GTK_BOX(hbox), list_frame, FALSE, FALSE, 10);
 
-	global.scrolled_window = gtk_scrolled_window_new(NULL, NULL);
+	scrolled_window = gtk_scrolled_window_new(NULL, NULL);
 	global.listbox = gtk_list_box_new();
 
-	gtk_container_add(GTK_CONTAINER(list_frame), global.scrolled_window);
-	gtk_container_add(GTK_CONTAINER(global.scrolled_window), global.listbox);
-	gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(global.scrolled_window), 110);
+	gtk_container_add(GTK_CONTAINER(list_frame), scrolled_window);
+	gtk_container_add(GTK_CONTAINER(scrolled_window), global.listbox);
+	gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(scrolled_window), 110);
+
+	g_signal_connect(GTK_WIDGET(global.listbox), "row-selected", G_CALLBACK(row_select_callback), NULL);
 
 	// Create GLArea Frame
 
@@ -232,10 +245,19 @@ static void copy_bin_file(char *filename) {
 		return;
 	}
 
+	fseek(global.fp, 0x0C, SEEK_SET);
+	fread(&global.memory_ofs, sizeof(uint32_t), 1, global.fp);
+
 	fseek(global.fp, 0x800, SEEK_SET);
 	uint32_t nb_models;
 	fread(&nb_models, sizeof(uint32_t), 1, global.fp);
 	
+	if(global.file_ofs != NULL) {
+		free(global.file_ofs);
+	}
+	global.file_ofs = malloc(sizeof(struct ModelAddress) * nb_models);
+	fread(global.file_ofs, sizeof(struct ModelAddress), nb_models, global.fp);
+
 	char mdl_label[0x20];
 	int i;
 
@@ -252,5 +274,26 @@ static void copy_bin_file(char *filename) {
 		gtk_container_add(GTK_CONTAINER(row), label);
 		gtk_container_add(GTK_CONTAINER(global.listbox), row);
 	}
+
+}
+
+static void row_select_callback(GtkListBox *box, GtkListBoxRow *row, gpointer user_data) {
+
+	g_print("New row selected\n");
+	if(row == NULL) {
+		return;
+	}
+
+	GList *children = gtk_container_get_children(GTK_CONTAINER(row));
+	const gchar *text = gtk_label_get_text(children->data);
+	char *space = strrchr(text, ' ');
+	if(space == NULL) {
+		return;
+	}
+
+	space++;
+	int num = atoi(space);
+	g_print("Label number: %d\n", num);
+	g_print("Psx Memory Offset: 0x%08x\n", global.file_ofs[num].mesh_ofs);
 
 }
