@@ -36,6 +36,22 @@ struct Mesh_Header {
 	uint32_t vert_ofs;
 };
 
+struct Vertex {
+	int16_t x;
+	int16_t y;
+	int16_t z;
+	int16_t w;
+};
+
+struct TextureCoord {
+	uint8_t u,v;
+};
+
+struct Face {
+	struct TextureCoord coord[4];
+	uint8_t indice[4];
+};
+
 void read_ebd_file(FILE *fp, struct TIM_Header list[]);
 
 int main(int argc, char *argv[]) {
@@ -56,7 +72,7 @@ int main(int argc, char *argv[]) {
 
 	// Read types of files in Archive
 
-	uint32_t file_len, ofs, i;
+	uint32_t file_len, ofs, i, k;
 	uint32_t nb_tim, tim_ofs[0x50];
 	char *dot, asset_name[0x20];
 
@@ -144,8 +160,11 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
 
 	struct EBD_Mesh *mesh_list;
 	struct Mesh_Header *header;
-	uint32_t ofs, memory, nb_mesh, i;
+	uint32_t ofs, memory, nb_mesh, i, k;
 	uint8_t nb_poly;
+	struct Vertex *vert_list;
+	struct Face *face_list;
+
 
 	ofs = ftell(fp);
 	fseek(fp, ofs + 0x0C, SEEK_SET);
@@ -197,6 +216,54 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
 		
 		header = malloc(sizeof(struct Mesh_Header) * nb_poly);
 		fread(header, sizeof(struct Mesh_Header), nb_poly, fp);
+		
+		for(k = 0; k < nb_poly; k++) {
+			
+			if(!header[k].vert_ofs) {
+				continue;
+			}
+
+			header[k].vert_ofs -= memory;
+			header[k].vert_ofs += 0x800;
+			header[k].vert_ofs += ofs;
+			
+			if(header[k].tri_ofs) {
+				header[k].tri_ofs -= memory;
+				header[k].tri_ofs += 0x800;
+				header[k].tri_ofs += ofs;
+			} else {
+				header[k].nb_tri = 0;
+			}
+
+			if(header[k].quad_ofs) {
+				header[k].quad_ofs -= memory;
+				header[k].quad_ofs += 0x800;
+				header[k].quad_ofs += ofs;
+			} else {
+				header[k].nb_quad = 0;
+			}
+
+			vert_list = malloc(sizeof(struct Vertex) * header[k].nb_vert);
+			fseek(fp, header[k].vert_ofs, SEEK_SET);
+			fread(vert_list, sizeof(struct Vertex), header[k].nb_vert, fp);
+
+			face_list = malloc(sizeof(struct Face) * (header[k].nb_tri +
+			header[k].nb_quad));
+			
+			if(header[k].tri_ofs) {
+				fseek(fp, header[k].tri_ofs, SEEK_SET);
+				fread(face_list, sizeof(struct Face), header[k].nb_tri, fp);
+			}
+
+			if(header[k].quad_ofs) {
+				fseek(fp, header[k].quad_ofs, SEEK_SET);
+				fread(&face_list[header[k].nb_tri], sizeof(struct Face), header[k].nb_quad, fp);
+			}
+
+			free(vert_list);
+			free(face_list);
+
+		}
 
 		free(header);
 
