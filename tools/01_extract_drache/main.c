@@ -52,7 +52,15 @@ struct Face {
 	uint8_t indice[4];
 };
 
+struct glTF_Primitive {
+	uint32_t nb_vert;
+	uint32_t nb_face;
+	float vert_list[1024 * 5];
+	uint16_t face_list[1024 * 3];
+};
+
 void read_ebd_file(FILE *fp, struct TIM_Header list[]);
+void glTF_convert_primitive(struct Mesh_Header h, struct Vertex v_list[], struct Face f_list[], struct glTF_Primitive *p);
 
 int main(int argc, char *argv[]) {
 
@@ -164,7 +172,7 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
 	uint8_t nb_poly;
 	struct Vertex *vert_list;
 	struct Face *face_list;
-
+	struct glTF_Primitive prim;
 
 	ofs = ftell(fp);
 	fseek(fp, ofs + 0x0C, SEEK_SET);
@@ -260,6 +268,12 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
 				fread(&face_list[header[k].nb_tri], sizeof(struct Face), header[k].nb_quad, fp);
 			}
 
+			
+			glTF_convert_primitive(header[k], vert_list, face_list, &prim);
+			
+			printf("Number of verices: %d\n", prim.nb_vert);
+			printf("Number of faces: %d\n", prim.nb_face);
+
 			free(vert_list);
 			free(face_list);
 
@@ -271,5 +285,155 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
 
 
 	free(mesh_list);
+
+}
+
+void glTF_convert_primitive(struct Mesh_Header h, struct Vertex v_list[], struct Face f_list[], struct glTF_Primitive *p) {
+
+	int i, k, j, found;
+	uint16_t index, indice[4];
+	float x, y, z, u, v;
+
+	p->nb_vert = 0;
+	p->nb_face = 0;
+
+	for(i = 0; i < h.nb_tri; i++) {
+
+		for(k = 0; k < 3; k++) {
+			index = f_list[i].indice[k];
+			x = -0.01f * (float)v_list[index].x;
+			y = -0.01f * (float)v_list[index].y;
+			z = -0.01f * (float)v_list[index].z;
+			u = (float)f_list[i].coord[k].u / 256.0f;
+			v = (float)f_list[i].coord[k].v / 128.0f;
+
+		
+			found = 0;
+
+			for(j = 0; j < p->nb_vert; j++) {
+			
+				if(p->vert_list[j*5+0] != x) {
+					continue;
+				}
+				if(p->vert_list[j*5+0] != y) {
+					continue;
+				}
+				if(p->vert_list[j*5+0] != z) {
+					continue;
+				}
+				if(p->vert_list[j*5+0] != u) {
+					continue;
+				}
+				if(p->vert_list[j*5+0] != v) {
+					continue;
+				}
+			
+				indice[k] = j;
+				found = 1;
+				break;
+			}
+
+			if(found) {
+				continue;
+			}
+
+			p->vert_list[p->nb_vert*5+0] = x;
+			p->vert_list[p->nb_vert*5+1] = y;
+			p->vert_list[p->nb_vert*5+2] = z;
+			p->vert_list[p->nb_vert*5+3] = u;
+			p->vert_list[p->nb_vert*5+4] = v;
+		
+			indice[k] = p->nb_vert;
+			p->nb_vert++;
+		}
+
+		p->face_list[p->nb_face*3+0] = indice[0];
+		p->face_list[p->nb_face*3+1] = indice[1];
+		p->face_list[p->nb_face*3+2] = indice[2];
+		p->nb_face++;
+
+	}
+
+	for(i = h.nb_tri; i < h.nb_tri + h.nb_quad; i++) {
+
+		for(k = 0; k < 4; k++) {
+			index = f_list[i].indice[k];
+			x = -0.01f * (float)v_list[index].x;
+			y = -0.01f * (float)v_list[index].y;
+			z = -0.01f * (float)v_list[index].z;
+			u = (float)f_list[i].coord[k].u / 256.0f;
+			v = (float)f_list[i].coord[k].v / 128.0f;
+
+		
+			found = 0;
+
+			for(j = 0; j < p->nb_vert; j++) {
+			
+				if(p->vert_list[j*5+0] != x) {
+					continue;
+				}
+				if(p->vert_list[j*5+0] != y) {
+					continue;
+				}
+				if(p->vert_list[j*5+0] != z) {
+					continue;
+				}
+				if(p->vert_list[j*5+0] != u) {
+					continue;
+				}
+				if(p->vert_list[j*5+0] != v) {
+					continue;
+				}
+			
+				indice[k] = j;
+				found = 1;
+				break;
+			}
+
+			if(found) {
+				continue;
+			}
+
+			p->vert_list[p->nb_vert*5+0] = x;
+			p->vert_list[p->nb_vert*5+1] = y;
+			p->vert_list[p->nb_vert*5+2] = z;
+			p->vert_list[p->nb_vert*5+3] = u;
+			p->vert_list[p->nb_vert*5+4] = v;
+		
+			indice[k] = p->nb_vert;
+			p->nb_vert++;
+		}
+
+		p->face_list[p->nb_face*3+0] = indice[0];
+		p->face_list[p->nb_face*3+1] = indice[1];
+		p->face_list[p->nb_face*3+2] = indice[2];
+		p->nb_face++;
+
+		p->face_list[p->nb_face*3+0] = indice[1];
+		p->face_list[p->nb_face*3+1] = indice[2];
+		p->face_list[p->nb_face*3+2] = indice[3];
+		p->nb_face++;
+
+	}
+
+	FILE *fp = fopen("drache.obj", "w");
+
+	for(i = 0; i < p->nb_vert; i++) {
+		fprintf(fp, "v %.02f %.02f %.02f\n", 
+			p->vert_list[i*5+0],
+			p->vert_list[i*5+1],
+			p->vert_list[i*5+2]
+		);
+	}
+
+	for(i = 0; i < p->nb_face; i++) {
+		fprintf(fp, "f %d %d %d\n", 
+			p->face_list[i*3+0] + 1,
+			p->face_list[i*3+1] + 1,
+			p->face_list[i*3+2] + 1
+		);
+	}
+
+	fclose(fp);
 
 }
