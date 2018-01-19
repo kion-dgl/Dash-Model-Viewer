@@ -52,6 +52,17 @@ struct Face {
 	uint8_t indice[4];
 };
 
+struct glTF_Header {
+	uint32_t magic;
+	uint32_t version;
+	uint32_t length;
+};
+
+struct glTF_Chunk {
+	uint32_t length;
+	uint32_t type;
+};
+
 struct glTF_Primitive {
 	uint32_t nb_vert;
 	uint32_t nb_face;
@@ -61,10 +72,12 @@ struct glTF_Primitive {
 
 void read_ebd_file(FILE *fp, struct TIM_Header list[]);
 void glTF_convert_primitive(struct Mesh_Header h, struct Vertex v_list[], struct Face f_list[], struct glTF_Primitive *p);
+void glTF_export(struct glTF_Primitive *p, uint32_t type);
 
 int main(int argc, char *argv[]) {
 
 	FILE *fp;
+	struct glTF_Primitive prim;
 	struct TIM_Header *tim_list;
 
 	if(argc != 2) {
@@ -280,6 +293,7 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
 		}
 
 		free(header);
+		glTF_export(&prim, mesh_list[i].number);
 
 	}
 
@@ -416,6 +430,7 @@ void glTF_convert_primitive(struct Mesh_Header h, struct Vertex v_list[], struct
 
 	}
 
+	/*
 	FILE *fp = fopen("drache.obj", "w");
 
 	for(i = 0; i < p->nb_vert; i++) {
@@ -435,5 +450,101 @@ void glTF_convert_primitive(struct Mesh_Header h, struct Vertex v_list[], struct
 	}
 
 	fclose(fp);
+	*/
+
+}
+
+void glTF_export(struct glTF_Primitive *p, uint32_t type) {
+	
+	char filename[0x20], json_str[1024*10];
+	sprintf(filename, "%04x.glb", type);
+	struct glTF_Header header;
+	struct glTF_Chunk json_chunk, bin_chunk;
+	uint32_t json_len;
+	uint8_t *json_data;
+
+	FILE *str;
+	str = fmemopen(json_str, 1024*10, "w");
+	fprintf(str, "{");
+	fprintf(str, "\"asset\":{\"generator\":\"Dash glTF Exporter\",\"version\":\"2.0\"},");
+	fprintf(str, "\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],");
+	fprintf(str, "\"meshes\":[{\"name\":\"drache\",\"primitives\":[");
+
+	// START Primitive
+	fprintf(str, "{\"attributes\":{\"POSITION\":0,\"TEXCOORD_0\":1},\"indices\":2,\"mode\":4,\"material\":0}");
+	// END Primitive
+
+    fprintf(str, "]}],\"accessors\":[");
+
+	// START Accessors
+	fprintf(str, "{\"bufferView\":0,\"byteOffset\":%d,\"componentType\":5126,\"count\":%d,", 0, 0);
+	fprintf(str, "\"type\":\"VEC3\",\"max\":[%.02f,%.02f,%.02f],\"min\":[%.02f,%.02f,%.02f]},", 0.0,0.0,0.0,0.0,0.0,0.0);
+	fprintf(str, "{\"bufferView\":1,\"byteOffset\":%d,\"componentType\":5126,\"count\":%d,\"type\":\"VEC2\"},",0,0);
+
+	// END Accessors
+
+	fclose(str);
+
+	printf("%s\n", json_str);
+	
+	json_len = strlen(json_str) + (strlen(json_str)%4 + 4);
+	json_data = malloc(json_len);
+	memset(json_data, 0, json_len);
+	strcpy(json_data, json_str);
+
+
+/*
+        {
+            "bufferView": 2,
+            "byteOffset": 0,
+            "componentType": 5123,
+            "count": 261,
+            "type": "SCALAR"
+        }
+    ],
+    "materials": [
+        {
+            "pbrMetallicRoughness": {
+                "baseColorTexture": {
+                    "index": 0
+                },
+                "metallicFactor": 0.0
+            },
+            "emissiveFactor": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "name": "SH1500.TIM"
+        }
+    ],
+*/
+
+	FILE *fp = fopen(filename, "w");
+	
+	if(fp == NULL) {
+		fprintf(stderr, "Could not open %s for writing\n", filename);
+		return;
+	}
+	
+	header.magic = 0x46546C67;
+	header.version = 2;
+	header.length = 0;
+	
+	json_chunk.length = json_len;
+	json_chunk.type = 0x4E4F534A;
+
+	bin_chunk.length = 0;
+	bin_chunk.type = 0x004E4942;
+
+	fwrite(&header, sizeof(struct glTF_Header), 1, fp);
+	fwrite(&json_chunk, sizeof(struct glTF_Chunk), 1, fp);
+	fwrite(json_data, json_len, 1, fp);
+	//fwrite(&bin_chunk, sizeof(struct glTF_Chunk), 1, fp);
+
+
+	fclose(fp);
+	
+	free(json_data);
 
 }

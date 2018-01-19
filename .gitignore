@@ -3,3 +3,7 @@
 *.bin
 *.BIN
 *.png
+*.swp
+*.glTF
+*.obj
+*.glb
