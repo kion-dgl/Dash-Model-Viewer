@@ -70,6 +70,13 @@ struct glTF_Primitive {
 	uint16_t face_list[1024 * 3];
 	float max[3];
 	float min[3];
+	uint32_t material;
+};
+
+struct glTF_Material {
+	uint32_t width;
+	uint32_t height;
+	uint8_t *data;
 };
 
 void read_ebd_file(FILE *fp, struct TIM_Header list[]);
@@ -188,6 +195,7 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
 	struct Vertex *vert_list;
 	struct Face *face_list;
 	struct glTF_Primitive prim;
+	struct glTF_Material mat;
 
 	ofs = ftell(fp);
 	fseek(fp, ofs + 0x0C, SEEK_SET);
@@ -240,6 +248,9 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
 		header = malloc(sizeof(struct Mesh_Header) * nb_poly);
 		fread(header, sizeof(struct Mesh_Header), nb_poly, fp);
 		
+		printf("Texture page: %04x\n", header[0].tex_page);
+		printf("Pallet page: %04x\n", header[0].pallet_page);
+
 		for(k = 0; k < nb_poly; k++) {
 			
 			if(!header[k].vert_ofs) {
@@ -426,8 +437,8 @@ void glTF_convert_primitive(struct Mesh_Header h, struct Vertex v_list[], struct
 		p->nb_face++;
 
 		p->face_list[p->nb_face*3+0] = indice[1];
-		p->face_list[p->nb_face*3+1] = indice[2];
-		p->face_list[p->nb_face*3+2] = indice[3];
+		p->face_list[p->nb_face*3+1] = indice[3];
+		p->face_list[p->nb_face*3+2] = indice[2];
 		p->nb_face++;
 
 	}
@@ -458,6 +469,7 @@ void glTF_convert_primitive(struct Mesh_Header h, struct Vertex v_list[], struct
 
 void glTF_export(struct glTF_Primitive *p, uint32_t type) {
 	
+	int i;
 	char filename[0x20], json_str[1024*10];
 	sprintf(filename, "%04x.glb", type);
 	struct glTF_Header header;
@@ -465,6 +477,33 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
 	uint32_t json_len, bin_length;
 	uint8_t *json_data, *bin_data;
 	uint8_t padding;
+
+	memset(p->min, 0, 12);
+	memset(p->max, 0, 12);
+
+	for(i = 0; i < p->nb_vert; i++) {
+		
+		if(p->vert_list[i*5+0] < p->min[0]) {
+			p->min[0] = p->vert_list[i*5+0];
+		}
+		if(p->vert_list[i*5+1] < p->min[1]) {
+			p->min[1] = p->vert_list[i*5+1];
+		}
+		if(p->vert_list[i*5+2] < p->min[2]) {
+			p->min[2] = p->vert_list[i*5+2];
+		}
+
+		if(p->vert_list[i*5+0] > p->max[0]) {
+			p->max[0] = p->vert_list[i*5+0];
+		}
+		if(p->vert_list[i*5+1] > p->max[1]) {
+			p->max[1] = p->vert_list[i*5+1];
+		}
+		if(p->vert_list[i*5+2] > p->max[2]) {
+			p->max[2] = p->vert_list[i*5+2];
+		}
+
+	}
 
 	FILE *str;
 	str = fmemopen(json_str, 1024*10, "w");
@@ -480,29 +519,32 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
     fprintf(str, "]}],\"accessors\":[");
 
 	// START Accessors
-	fprintf(str, "{\"bufferView\":0,\"byteOffset\":0,\"componentType\":5126,\"count\":%d,",0);
-	fprintf(str, "\"type\":\"VEC3\",\"max\":[%.02f,%.02f,%.02f],\"min\":[%.02f,%.02f,%.02f]},", 0.0,0.0,0.0,0.0,0.0,0.0);
-	fprintf(str, "{\"bufferView\":1,\"byteOffset\":0,\"componentType\":5126,\"count\":%d,\"type\":\"VEC2\"},",0);
-	fprintf(str, "{\"bufferView\":2,\"byteOffset\":0,\"componentType\":5123,\"count\":%d,\"type\":\"SCALAR\"}", 0);
+	fprintf(str, "{\"bufferView\":0,\"byteOffset\":0,\"componentType\":5126,\"count\":%d,",p->nb_vert);
+	fprintf(str, "\"type\":\"VEC3\",\"max\":[%.02f,%.02f,%.02f],",  p->max[0], p->max[1], p->max[2]);
+	fprintf(str, "\"min\":[%.02f,%.02f,%.02f]},", p->min[0], p->min[1], p->min[2]);
+
+	fprintf(str, "{\"bufferView\":1,\"byteOffset\":0,\"componentType\":5126,\"count\":%d,\"type\":\"VEC2\"},",p->nb_vert);
+	fprintf(str, "{\"bufferView\":2,\"byteOffset\":0,\"componentType\":5123,\"count\":%d,\"type\":\"SCALAR\"}", p->nb_face * 3);
 	// END Accessors
 
 	fprintf(str, "],\"materials\":[");
 	// Start Materials
-	fprintf(str, "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":%d},",0);
-	fprintf(str, "\"metallicFactor\":0.0},\"emissiveFactor\":[0.0,0.0,0.0],\"name\": \"SH1500.TIM\"}");
+	//fprintf(str, "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":%d},",0);
+	fprintf(str, "{\"pbrMetallicRoughness\":{");
+	fprintf(str, "\"metallicFactor\":0.0},\"emissiveFactor\":[0.0,0.0,0.0],\"name\": \"SH0C00.TIM\"}");
 	// End Materials
 
 	fprintf(str, "],\"textures\":[{\"source\":0}],\"images\":[{\"bufferView\":3,\"mimeType\":\"image/png\"}],");
     fprintf(str, "\"bufferViews\":[");
 
 	// Start Buffer Views
-	fprintf(str, "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":%d,\"byteStride\":20},", 0);
-	fprintf(str, "{\"buffer\":0,\"byteOffset\":12,\"byteLength\":%d,\"byteStride\":20},", 0);
-	fprintf(str, "{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":%d},", 0, 0);
+	fprintf(str, "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":%d,\"byteStride\":20},", p->nb_vert * 20);
+	fprintf(str, "{\"buffer\":0,\"byteOffset\":12,\"byteLength\":%d,\"byteStride\":20},", p->nb_vert * 20 - 12);
+	fprintf(str, "{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":%d},", p->nb_vert * 20, p->nb_face * 3 * 2);
 	fprintf(str, "{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":%d}", 0, 0);
 	// End Buffer Views
 
-	fprintf(str, "],\"buffers\":[{\"byteLength\":%d}]}", 0);
+	fprintf(str, "],\"buffers\":[{\"byteLength\":%d}]}", p->nb_vert * 20 + p->nb_face * 6);
 
 	fclose(str);
 
@@ -514,8 +556,9 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
 	}
 	json_len = strlen(json_str) + padding;
 	json_data = malloc(json_len);
-	memset(json_data, 0, json_len);
+	memset(json_data, 32, json_len);
 	strcpy(json_data, json_str);
+	json_data[strlen(json_str)] = 0x20;
 
 	bin_length = p->nb_vert * 20 + p->nb_face * 6;
 	bin_data = malloc(bin_length);
@@ -533,7 +576,7 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
 	
 	header.magic = 0x46546C67;
 	header.version = 2;
-	header.length = json_len + bin_length;
+	header.length = json_len + bin_length + 12 + 8 + 8;
 	
 	json_chunk.length = json_len;
 	json_chunk.type = 0x4E4F534A;
