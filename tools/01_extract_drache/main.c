@@ -460,8 +460,8 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
 	sprintf(filename, "%04x.glb", type);
 	struct glTF_Header header;
 	struct glTF_Chunk json_chunk, bin_chunk;
-	uint32_t json_len;
-	uint8_t *json_data;
+	uint32_t json_len, bin_length;
+	uint8_t *json_data, *bin_data;
 
 	FILE *str;
 	str = fmemopen(json_str, 1024*10, "w");
@@ -492,6 +492,12 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
 	memset(json_data, 0, json_len);
 	strcpy(json_data, json_str);
 
+	bin_length = p->nb_vert * 20 + p->nb_face * 6;
+	bin_data = malloc(bin_length);
+	str = fmemopen(bin_data, bin_length, "w");
+	fwrite(p->vert_list, sizeof(float) * 5, p->nb_vert, str);
+	fwrite(p->face_list, sizeof(uint16_t) * 3, p->nb_face, str);
+	fclose(str);
 
 /*
         {
@@ -529,22 +535,23 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
 	
 	header.magic = 0x46546C67;
 	header.version = 2;
-	header.length = 0;
+	header.length = json_len + bin_length;
 	
 	json_chunk.length = json_len;
 	json_chunk.type = 0x4E4F534A;
 
-	bin_chunk.length = 0;
+	bin_chunk.length = bin_length;
 	bin_chunk.type = 0x004E4942;
 
 	fwrite(&header, sizeof(struct glTF_Header), 1, fp);
 	fwrite(&json_chunk, sizeof(struct glTF_Chunk), 1, fp);
 	fwrite(json_data, json_len, 1, fp);
-	//fwrite(&bin_chunk, sizeof(struct glTF_Chunk), 1, fp);
-
+	fwrite(&bin_chunk, sizeof(struct glTF_Chunk), 1, fp);
+	fwrite(bin_data, bin_length, 1, fp);
 
 	fclose(fp);
 	
 	free(json_data);
+	free(bin_data);
 
 }
