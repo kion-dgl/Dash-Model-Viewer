@@ -68,6 +68,8 @@ struct glTF_Primitive {
 	uint32_t nb_face;
 	float vert_list[1024 * 5];
 	uint16_t face_list[1024 * 3];
+	float max[3];
+	float min[3];
 };
 
 void read_ebd_file(FILE *fp, struct TIM_Header list[]);
@@ -462,6 +464,7 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
 	struct glTF_Chunk json_chunk, bin_chunk;
 	uint32_t json_len, bin_length;
 	uint8_t *json_data, *bin_data;
+	uint8_t padding;
 
 	FILE *str;
 	str = fmemopen(json_str, 1024*10, "w");
@@ -477,17 +480,39 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
     fprintf(str, "]}],\"accessors\":[");
 
 	// START Accessors
-	fprintf(str, "{\"bufferView\":0,\"byteOffset\":%d,\"componentType\":5126,\"count\":%d,", 0, 0);
+	fprintf(str, "{\"bufferView\":0,\"byteOffset\":0,\"componentType\":5126,\"count\":%d,",0);
 	fprintf(str, "\"type\":\"VEC3\",\"max\":[%.02f,%.02f,%.02f],\"min\":[%.02f,%.02f,%.02f]},", 0.0,0.0,0.0,0.0,0.0,0.0);
-	fprintf(str, "{\"bufferView\":1,\"byteOffset\":%d,\"componentType\":5126,\"count\":%d,\"type\":\"VEC2\"},",0,0);
-
+	fprintf(str, "{\"bufferView\":1,\"byteOffset\":0,\"componentType\":5126,\"count\":%d,\"type\":\"VEC2\"},",0);
+	fprintf(str, "{\"bufferView\":2,\"byteOffset\":0,\"componentType\":5123,\"count\":%d,\"type\":\"SCALAR\"}", 0);
 	// END Accessors
+
+	fprintf(str, "],\"materials\":[");
+	// Start Materials
+	fprintf(str, "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":%d},",0);
+	fprintf(str, "\"metallicFactor\":0.0},\"emissiveFactor\":[0.0,0.0,0.0],\"name\": \"SH1500.TIM\"}");
+	// End Materials
+
+	fprintf(str, "],\"textures\":[{\"source\":0}],\"images\":[{\"bufferView\":3,\"mimeType\":\"image/png\"}],");
+    fprintf(str, "\"bufferViews\":[");
+
+	// Start Buffer Views
+	fprintf(str, "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":%d,\"byteStride\":20},", 0);
+	fprintf(str, "{\"buffer\":0,\"byteOffset\":12,\"byteLength\":%d,\"byteStride\":20},", 0);
+	fprintf(str, "{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":%d},", 0, 0);
+	fprintf(str, "{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":%d}", 0, 0);
+	// End Buffer Views
+
+	fprintf(str, "],\"buffers\":[{\"byteLength\":%d}]}", 0);
 
 	fclose(str);
 
 	printf("%s\n", json_str);
 	
-	json_len = strlen(json_str) + (strlen(json_str)%4 + 4);
+	padding = strlen(json_str)%4;
+	if(padding == 0) {
+		padding = 4;
+	}
+	json_len = strlen(json_str) + padding;
 	json_data = malloc(json_len);
 	memset(json_data, 0, json_len);
 	strcpy(json_data, json_str);
@@ -498,33 +523,6 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
 	fwrite(p->vert_list, sizeof(float) * 5, p->nb_vert, str);
 	fwrite(p->face_list, sizeof(uint16_t) * 3, p->nb_face, str);
 	fclose(str);
-
-/*
-        {
-            "bufferView": 2,
-            "byteOffset": 0,
-            "componentType": 5123,
-            "count": 261,
-            "type": "SCALAR"
-        }
-    ],
-    "materials": [
-        {
-            "pbrMetallicRoughness": {
-                "baseColorTexture": {
-                    "index": 0
-                },
-                "metallicFactor": 0.0
-            },
-            "emissiveFactor": [
-                0.0,
-                0.0,
-                0.0
-            ],
-            "name": "SH1500.TIM"
-        }
-    ],
-*/
 
 	FILE *fp = fopen(filename, "w");
 	
