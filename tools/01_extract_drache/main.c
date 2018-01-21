@@ -142,11 +142,19 @@ int main(int argc, char *argv[]) {
 	tim_list = malloc(nb_tim * sizeof(struct TIM_Header));
 
 	for(i = 0; i < nb_tim; i++) {
-		printf("Reading TIM file at 0x%08x\n", tim_ofs[i]);
+		// printf("Reading TIM file at 0x%08x\n", tim_ofs[i]);
 		fseek(fp, tim_ofs[i], SEEK_SET);
 		fread(&tim_list[i], sizeof(struct TIM_Header), 1, fp);
 		tim_list[i].offset = tim_ofs[i];
-		printf("Found file: %s\n", tim_list[i].image_name);
+		//printf("Found file: %s\n", tim_list[i].image_name);
+
+		if(strcmp("..\\OBJ\\ST03\\AR00A\\SH0C00.TIM", tim_list[i].image_name)) {
+			continue;
+		}
+
+		printf("Pallet x: %d, Pallet y: %d\n", tim_list[i].pallet_x, tim_list[i].pallet_y);
+		printf("Image x: %d, IMage y: %d\n", tim_list[i].image_x, tim_list[i].image_y);
+
 	}
 
 	// Set File Position Back to Zero
@@ -196,6 +204,8 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
 	struct Face *face_list;
 	struct glTF_Primitive prim;
 	struct glTF_Material mat;
+
+	uint16_t tx, ty, px, py;
 
 	ofs = ftell(fp);
 	fseek(fp, ofs + 0x0C, SEEK_SET);
@@ -249,7 +259,14 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
 		fread(header, sizeof(struct Mesh_Header), nb_poly, fp);
 		
 		printf("Texture page: %04x\n", header[0].tex_page);
+		tx = (header[0].tex_page & 0x0F) * 64;
+		ty = (header[0].tex_page >> 4) * 64;
+		printf("Texture x: %d. y: %d\n", tx, ty);
+
 		printf("Pallet page: %04x\n", header[0].pallet_page);
+		px = (header[0].pallet_page & 0x3f) << 4;
+		py = header[0].pallet_page >> 6;
+		printf("Pallet x: %d. y: %d\n", px, py);
 
 		for(k = 0; k < nb_poly; k++) {
 			
