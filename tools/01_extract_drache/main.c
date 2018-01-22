@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <png.h>
 
 struct TIM_Header {
 	uint32_t type;
@@ -70,18 +71,23 @@ struct glTF_Primitive {
 	uint16_t face_list[1024 * 3];
 	float max[3];
 	float min[3];
-	uint32_t material;
+	uint32_t mat;
 };
 
 struct glTF_Material {
-	uint32_t width;
-	uint32_t height;
-	uint8_t *data;
+	float width;
+	float height;
+	uint32_t length;
+	uint16_t pallet_x, pallet_y;
+	uint16_t image_x, image_y;
+	char image_name[0x20];
+	uint8_t data[1024 * 100];
 };
 
-void read_ebd_file(FILE *fp, struct TIM_Header list[]);
+void read_ebd_file(FILE *fp, struct TIM_Header list[], int32_t nb_tex);
 void glTF_convert_primitive(struct Mesh_Header h, struct Vertex v_list[], struct Face f_list[], struct glTF_Primitive *p);
 void glTF_export(struct glTF_Primitive *p, uint32_t type);
+uint32_t glTF_get_texture(FILE *fp, struct TIM_Header list[], struct glTF_Material *m, uint16_t ix, uint16_t iy, uint16_t px, uint16_t py, int32_t nb_tex);
 
 int main(int argc, char *argv[]) {
 
@@ -103,7 +109,8 @@ int main(int argc, char *argv[]) {
 	// Read types of files in Archive
 
 	uint32_t file_len, ofs, i, k;
-	uint32_t nb_tim, tim_ofs[0x50];
+	uint32_t tim_ofs[0x50];
+	int32_t nb_tim;
 	char *dot, asset_name[0x20];
 
 	fseek(fp, 0, SEEK_END);
@@ -179,7 +186,7 @@ int main(int argc, char *argv[]) {
 		if(strcmp(dot, "EBD") == 0) {
 			printf("Reading EBD file\n");
 			fseek(fp, ofs, SEEK_SET);
-			read_ebd_file(fp, tim_list);
+			read_ebd_file(fp, tim_list, nb_tim);
 		}
 
 	} while((ofs += 0x400) < file_len);
@@ -194,7 +201,7 @@ int main(int argc, char *argv[]) {
 
 }
 
-void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
+void read_ebd_file(FILE *fp, struct TIM_Header list[], int32_t nb_tex) {
 
 	struct EBD_Mesh *mesh_list;
 	struct Mesh_Header *header;
@@ -267,6 +274,8 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[]) {
 		px = (header[0].pallet_page & 0x3f) << 4;
 		py = header[0].pallet_page >> 6;
 		printf("Pallet x: %d. y: %d\n", px, py);
+
+		prim.mat = glTF_get_texture(fp, list, &mat, tx, ty, px, py, nb_tex);
 
 		for(k = 0; k < nb_poly; k++) {
 			
@@ -351,7 +360,6 @@ void glTF_convert_primitive(struct Mesh_Header h, struct Vertex v_list[], struct
 			u = (float)f_list[i].coord[k].u / 256.0f;
 			v = (float)f_list[i].coord[k].v / 128.0f;
 
-		
 			found = 0;
 
 			for(j = 0; j < p->nb_vert; j++) {
@@ -611,5 +619,222 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
 	
 	free(json_data);
 	free(bin_data);
+
+}
+
+
+uint32_t glTF_get_texture(FILE *fp, struct TIM_Header list[], struct glTF_Material *m, uint16_t ix, uint16_t iy, uint16_t px, uint16_t py, int32_t nb_tex)  {
+	
+	printf("Converting texture!!!\n");
+	printf("Number of textures: %d\n", nb_tex);
+	
+	uint16_t *clut, *image_body;
+	uint32_t width, height, bytes_per_pixel,bx, by, x, y;
+	int i, index, inc, pos;
+	index = -1;
+	uint8_t byte, *bitmap, *c;
+	char *slash;
+
+	int BLOCK_WIDTH = 128;
+	int BLOCK_HEIGHT = 32;
+
+	for(i = nb_tex - 1; i > -1; i--) {
+		
+		if(list[i].pallet_x != px) {
+			continue;
+		}
+
+		if(list[i].pallet_y != py) {
+			continue;
+		}
+		
+		printf("Found pallet position: %s\n", list[i].image_name);
+		index = i;
+		break;
+	}
+
+	if(i == -1) {
+		fprintf(stderr, "Unable to locate pallet %d %d\n", px, py);
+		exit(1);
+	}
+
+	fseek(fp, list[index].offset + 0x100, SEEK_SET);
+	clut = malloc(list[index].nb_colors * list[index].nb_pallets * sizeof(uint16_t));
+	fread(clut, sizeof(uint16_t), list[index].nb_colors * list[index].nb_pallets, fp);
+
+	index = -1;
+	for(i = nb_tex - 1; i > -1; i--) {
+		
+		if(list[i].image_x != ix) {
+			continue;
+		}
+
+		if(list[i].image_y != iy) {
+			continue;
+		}
+		
+		printf("Found image position: %s\n", list[i].image_name);
+		index = i;
+		break;
+	}
+
+	if(index == -1) {
+		fprintf(stderr, "Could not find image %d %d\n", ix, iy);
+		exit(1);
+	}
+
+	height = list[index].height;
+	switch(list[index].nb_colors) {
+		case 16:
+			
+			bytes_per_pixel = 4;
+			width = list[index].width * 4;
+			inc = 2;
+
+		break;
+		case 256:
+			
+			BLOCK_WIDTH = BLOCK_WIDTH / 2;
+			bytes_per_pixel = 8;
+			width = list[index].width * 2;
+			inc = 1;
+
+		break;
+	}
+
+	fseek(fp, list[index].offset + 0x800, SEEK_SET);
+	image_body = malloc(sizeof(uint16_t) * width * height);
+
+	m->pallet_x = px;
+	m->pallet_y = py;
+	m->image_x = ix;
+	m->image_y = iy;
+	m->width = (float)width;
+	m->height = (float)height;
+	slash = strrchr(list[index].image_name, '\\');
+	slash++;
+	strcpy(m->image_name, slash);
+	printf("Name of texture: %s\n", m->image_name);
+
+	for(y = 0; y < height; y+= BLOCK_HEIGHT) {
+		for(x = 0; x < width; x += BLOCK_WIDTH) {
+			for(by = 0; by < BLOCK_HEIGHT; by++) {
+				for(bx = 0; bx < BLOCK_WIDTH; bx += inc) {
+					
+					fread(&byte, sizeof(uint8_t), 1, fp);
+					
+					switch(bytes_per_pixel) {
+						case 4:
+							
+							pos = ((y + by) * width) + (x + bx);
+							image_body[pos] = clut[byte & 0xf];
+							pos = ((y + by) * width) + (x + bx + 1);
+							image_body[pos] = clut[byte >> 4];
+
+						break;
+						case 8:
+							
+							pos = ((y + by) * width) + (x + bx);
+							image_body[pos] = clut[byte];
+
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	free(clut);
+
+	bitmap = malloc(width * height * 4);
+	c = bitmap;
+
+	for(i = 0; i < width * height; i++) {
+
+		*c++ = ((image_body[i] >> 0x00) & 0x1f) << 3;
+		*c++ = ((image_body[i] >> 0x05) & 0x1f) << 3;
+		*c++ = ((image_body[i] >> 0x0a) & 0x1f) << 3;
+
+		if(image_body[i] == 0) {
+			*c++ = 0;
+		} else {
+			*c++ = 0xFF;
+		}
+
+	}
+
+	free(image_body);
+
+	png_structp png_ptr;
+	png_infop info_ptr;
+	png_byte **row_ptr;
+	int pixel_size = 4;
+	int depth = 8;
+
+	FILE *wp;
+	wp = fmemopen(m->data, 1024 * 100, "w");
+	
+	png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+	if(png_ptr == NULL) {
+		fprintf(stderr, "Could not create png struct\n");
+		exit(1);
+	}
+
+	info_ptr = png_create_info_struct(png_ptr);
+	if(info_ptr == NULL) {
+		fprintf(stderr, "Could not create info struct\n");
+		exit(1);
+	}
+
+	if(setjmp(png_jmpbuf(png_ptr))) {
+		fprintf(stderr, "Could not set jmpbuf\n");
+		exit(1);
+	}
+
+	png_set_IHDR(
+		png_ptr,
+		info_ptr,
+		width,
+		height,
+		depth,
+		PNG_COLOR_TYPE_RGBA,
+		PNG_INTERLACE_NONE,
+		PNG_COMPRESSION_TYPE_DEFAULT,
+		PNG_FILTER_TYPE_DEFAULT
+	);
+
+	row_ptr = png_malloc(png_ptr, height * sizeof(png_byte*));
+
+	i = 0;
+	for(y = 0; y < height; y++) {
+		
+		png_byte *row = png_malloc(png_ptr, width * pixel_size);
+		row_ptr[y] = row;
+
+		for(x = 0; x < width; x++) {
+
+			*row++ = bitmap[i++];
+			*row++ = bitmap[i++];
+			*row++ = bitmap[i++];
+			*row++ = bitmap[i++];
+
+		}
+
+	}
+
+	png_init_io(png_ptr, wp);
+	png_set_rows(png_ptr, info_ptr, row_ptr);
+	png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
+
+	free(bitmap);
+	for(y = 0; y < height; y++) {
+		png_free(png_ptr, row_ptr[y]);
+	}
+
+	png_free(png_ptr, row_ptr);
+	m->length = ftell(fp);
+	fclose(wp);
+
+	return 0;
 
 }
