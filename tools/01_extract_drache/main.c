@@ -81,12 +81,12 @@ struct glTF_Material {
 	uint16_t pallet_x, pallet_y;
 	uint16_t image_x, image_y;
 	char image_name[0x20];
-	uint8_t data[1024 * 100];
+	uint8_t *data;
 };
 
 void read_ebd_file(FILE *fp, struct TIM_Header list[], int32_t nb_tex);
 void glTF_convert_primitive(struct Mesh_Header h, struct Vertex v_list[], struct Face f_list[], struct glTF_Primitive *p);
-void glTF_export(struct glTF_Primitive *p, uint32_t type);
+void glTF_export(struct glTF_Primitive *p, struct glTF_Material *m, uint32_t type);
 uint32_t glTF_get_texture(FILE *fp, struct TIM_Header list[], struct glTF_Material *m, uint16_t ix, uint16_t iy, uint16_t px, uint16_t py, int32_t nb_tex);
 
 int main(int argc, char *argv[]) {
@@ -332,7 +332,7 @@ void read_ebd_file(FILE *fp, struct TIM_Header list[], int32_t nb_tex) {
 		}
 
 		free(header);
-		glTF_export(&prim, mesh_list[i].number);
+		glTF_export(&prim, &mat, mesh_list[i].number);
 
 	}
 
@@ -492,7 +492,7 @@ void glTF_convert_primitive(struct Mesh_Header h, struct Vertex v_list[], struct
 
 }
 
-void glTF_export(struct glTF_Primitive *p, uint32_t type) {
+void glTF_export(struct glTF_Primitive *p, struct glTF_Material *m, uint32_t type) {
 	
 	int i;
 	char filename[0x20], json_str[1024*10];
@@ -554,45 +554,63 @@ void glTF_export(struct glTF_Primitive *p, uint32_t type) {
 
 	fprintf(str, "],\"materials\":[");
 	// Start Materials
-	//fprintf(str, "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":%d},",0);
-	fprintf(str, "{\"pbrMetallicRoughness\":{");
-	fprintf(str, "\"metallicFactor\":0.0},\"emissiveFactor\":[0.0,0.0,0.0],\"name\": \"SH0C00.TIM\"}");
+	fprintf(str, "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":%d},",0);
+	fprintf(str, "\"metallicFactor\":0.0},\"emissiveFactor\":[0.0,0.0,0.0],\"name\": \"%s\"}", m->image_name);
 	// End Materials
 
 	fprintf(str, "],\"textures\":[{\"source\":0}],\"images\":[{\"bufferView\":3,\"mimeType\":\"image/png\"}],");
+	//fprintf(str, "],\"textures\":[{\"source\":0}],\"images\":[{\"uri\":\"drache.png\"}],");
     fprintf(str, "\"bufferViews\":[");
+
+	bin_length = p->nb_vert * 20 + p->nb_face * 6;
+	padding = bin_length % 4;
+	
+	bin_length += m->length;
+
+	printf("Padding: %d\n", padding % 4);
+	printf("Bin Length: %d\n", bin_length);
 
 	// Start Buffer Views
 	fprintf(str, "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":%d,\"byteStride\":20},", p->nb_vert * 20);
 	fprintf(str, "{\"buffer\":0,\"byteOffset\":12,\"byteLength\":%d,\"byteStride\":20},", p->nb_vert * 20 - 12);
 	fprintf(str, "{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":%d},", p->nb_vert * 20, p->nb_face * 3 * 2);
-	fprintf(str, "{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":%d}", 0, 0);
+	fprintf(str, "{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":%d}",p->nb_vert * 20 + p->nb_face *6, m->length);
 	// End Buffer Views
 
-	fprintf(str, "],\"buffers\":[{\"byteLength\":%d}]}", p->nb_vert * 20 + p->nb_face * 6);
+	printf("PNG length: %d\n", m->length);
+
+	fprintf(str, "],\"buffers\":[{\"byteLength\":%d,\"uri\":\"drache.bin\"}]}", bin_length);
 
 	fclose(str);
 
-	printf("%s\n", json_str);
-	
-	padding = strlen(json_str)%4;
+	//printf("%s\n", json_str);
+	printf("String length: %ld\n", strlen(json_str));
+
+	padding = 4 - strlen(json_str)%4;
 	if(padding == 0) {
 		padding = 4;
 	}
+
 	json_len = strlen(json_str) + padding;
 	json_data = malloc(json_len);
-	memset(json_data, 32, json_len);
+	memset(json_data, 0x20, json_len);
 	strcpy(json_data, json_str);
 	json_data[strlen(json_str)] = 0x20;
 
-	bin_length = p->nb_vert * 20 + p->nb_face * 6;
+	printf("PNG length: %d\n", m->length);
+
 	bin_data = malloc(bin_length);
+	memset(bin_data, 0, bin_length);
+
 	str = fmemopen(bin_data, bin_length, "w");
 	fwrite(p->vert_list, sizeof(float) * 5, p->nb_vert, str);
 	fwrite(p->face_list, sizeof(uint16_t) * 3, p->nb_face, str);
+	fwrite(m->data, sizeof(uint8_t), m->length, str);
 	fclose(str);
+	
+	free(m->data);
 
-	FILE *fp = fopen(filename, "w");
+	FILE *fp = fopen("drache.glb", "w");
 	
 	if(fp == NULL) {
 		fprintf(stderr, "Could not open %s for writing\n", filename);
@@ -772,7 +790,7 @@ uint32_t glTF_get_texture(FILE *fp, struct TIM_Header list[], struct glTF_Materi
 	int depth = 8;
 
 	FILE *wp;
-	wp = fmemopen(m->data, 1024 * 100, "w");
+	wp = fopen("drache.png", "w");
 	
 	png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
 	if(png_ptr == NULL) {
@@ -832,7 +850,15 @@ uint32_t glTF_get_texture(FILE *fp, struct TIM_Header list[], struct glTF_Materi
 	}
 
 	png_free(png_ptr, row_ptr);
-	m->length = ftell(fp);
+	fclose(wp);
+
+	wp = fopen("drache.png", "r");
+	
+	fseek(wp, 0, SEEK_END);
+	m->length = ftell(wp);
+	m->data = malloc(m->length);
+	fseek(wp, 0, SEEK_SET);
+	fread(m->data, sizeof(uint8_t), m->length, wp);
 	fclose(wp);
 
 	return 0;
