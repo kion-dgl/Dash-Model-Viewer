@@ -20,7 +20,7 @@
 
 #include <stdint.h>
 
-struct PSX_Tim_Image {
+typedef struct {
 	uint32_t type;
 	uint32_t size;
 	uint32_t mode;
@@ -35,23 +35,23 @@ struct PSX_Tim_Image {
 	uint32_t offset;
 	uint8_t nop[16];
 	char image_name[0x20];
-};
+} PSX_Tim_Image;
 
-struct PSX_EBD_Model {
+typedef struct {
 	uint32_t id;
 	uint32_t mesh_ofs;
 	uint32_t bone_ofs;
 	uint32_t anim_ofs;
-};
+} PSX_EBD_Model;
 
-struct PSX_EBD_Model_List {
+typedef struct {
 	uint32_t offset;
 	uint32_t memory;
 	uint32_t nb_model;
-	struct PSX_EBD_Model *model_list;
-};
+	PSX_EBD_Model *model_list;
+} PSX_EBD_File;
 
-struct PSX_EBD_Mesh {
+typedef struct {
 	uint8_t nb_tri;
 	uint8_t nb_quad;
 	uint8_t nb_vert;
@@ -61,24 +61,24 @@ struct PSX_EBD_Mesh {
 	uint16_t image_page;
 	uint16_t pallet_page;
 	uint32_t vert_ofs;
-};
+} PSX_EBD_Mesh;
 
-struct PSX_EBD_Vertex {
+typedef struct {
 	int16_t x;
 	int16_t y;
 	int16_t z;
 	int16_t nop;
-};
+} PSX_EBD_Vertex;
 
-struct PSX_EBD_Face {
+typedef struct {
 	struct {
 		uint8_t u;
 		uint8_t v;
 	} coord[4];
 	uint8_t indice[4];
-};
+} PSX_EBD_Face;
 
-struct PSX_Framebuffer {
+typedef struct {
 	uint32_t nb_tex;
-	struct PSX_Tim_Image *tex_list;
-};
+	PSX_Tim_Image *tex_list;
+} PSX_Framebuffer;

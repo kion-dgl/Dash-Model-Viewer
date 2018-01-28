@@ -20,29 +20,29 @@
 
 #include <stdint.h>
 
-struct glTF_Vertex {
+typedef struct {
 	float x;
 	float y;
 	float z;
 	float u;
 	float v;
-};
+} glTF_Vertex;
 
-struct glTF_Face {
+typedef struct {
 	uint16_t a;
 	uint16_t b;
 	uint16_t c;
-};
+} glTF_Face;
 
-struct glTF_Primitive {
+typedef struct {
 	uint32_t nb_vert;
-	struct glTF_Vertex *vert_list;
+	glTF_Vertex *vert_list;
 	uint32_t nb_face;
-	struct glTF_Face *face_list;
+	glTF_Face *face_list;
 	uint32_t mat;
-};
+} glTF_Primitive;
 
-struct glTF_Material {
+typedef struct {
 	uint32_t pallet_x;
 	uint32_t pallet_y;
 	uint32_t image_x;
@@ -51,11 +51,11 @@ struct glTF_Material {
 	float width;
 	float height;
 	uint8_t *png;
-};
+} glTF_Material;
 
-struct glTF_Model {
-	uint32_t nb_prim;
-	struct glTF_Primitve *prim_list;
+typedef struct {
 	uint32_t nb_mat;
-	struct glTF_Material *mat_list;
-};
+	glTF_Material *mat_list;
+	uint32_t nb_prim;
+	glTF_Primitive *prim_list;
+} glTF_Model;
