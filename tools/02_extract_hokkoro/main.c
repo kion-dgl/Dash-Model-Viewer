@@ -32,6 +32,7 @@ void psx_read_ebd_file(FILE *fp, PSX_EBD_File *file);
 void psx_free_ebd_file(PSX_EBD_File *file);
 
 void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb);
+void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb);
 
 int main(int argc, char *argv[]) {
 
@@ -126,8 +127,23 @@ void psx_read_framebuffer(FILE *fp, PSX_Framebuffer *fb) {
 			continue;
 		}
 		
+		i--;
+		
 		fseek(fp, ofs, SEEK_SET);
-		fread(&fb->tex_list[--i], sizeof(PSX_Tim_Image), 1, fp);
+		fread(&fb->tex_list[i], sizeof(PSX_Tim_Image), 1, fp);
+		fb->tex_list[i].offset = ofs;
+
+		printf("%d Found image: %s\n\n", i, fb->tex_list[i].image_name);
+
+		if(i != 16) {
+			continue;
+		}
+
+		printf("Image x: %d\n",  fb->tex_list[i].image_x);
+		printf("Image y: %d\n",  fb->tex_list[i].image_y);
+
+		printf("Pallet x: %d\n",  fb->tex_list[i].pallet_x);
+		printf("Pallet y: %d\n",  fb->tex_list[i].pallet_y);
 
 	} while((ofs += 0x400) < len);
 
@@ -207,8 +223,8 @@ void psx_free_ebd_file(PSX_EBD_File *file) {
 void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 
 	uint8_t nb_prim;
-	uint32_t i, k, tmp;
-	uint32_t mesh_ofs;
+	uint32_t i, k, j, found, tmp;
+	uint32_t mesh_ofs, *mats;
 	glTF_Model model;
 	PSX_EBD_Mesh *psx_mesh;
 
@@ -258,11 +274,92 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 
 		}
 
+		// Determine Material
+
+		mats = malloc(sizeof(uint32_t) * nb_prim);
+		model.nb_mat = 0;
+
+		for(k = 0; k < nb_prim; k++) {
+
+			tmp = psx_mesh[k].tex_page;
+			found = 0;
+
+			for(j = 0; j < model.nb_mat; j++) {
+				
+				if(mats[j] != tmp) {
+					continue;
+				}
+
+				found = 1;
+				break;
+
+			}
+			
+			if(found) {
+				continue;
+			}
+
+			mats[model.nb_mat++] = tmp;
+		}
+
+		printf("Number of materials: %d\n", model.nb_mat);
+		model.mat_list = malloc(model.nb_mat * sizeof(glTF_Material));
+
+		for(k = 0; k < model.nb_mat; k++) {
+			model.mat_list[k].tex_page = mats[k];
+			printf("Material num: 0x%08x\n", mats[k]);
+		}
+
+		glTF_read_textures(fp, &model, fb);
+
 		// End model parsing
 		
+		free(mats);
 		free(psx_mesh);
+		free(model.mat_list);
 		break;
 
 	}
+
+}
+
+
+void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
+
+	int i, k;
+
+	uint16_t pallet_page, pallet_x, pallet_y;
+	uint16_t image_page, image_x, image_y;
+	uint16_t nb_color, *pallet;
+
+	for(i = 0; i < model->nb_mat; i++) {
+
+		image_page = model->mat_list[i].tex_page & 0xFFFF;
+		pallet_page =  model->mat_list[i].tex_page >> 16;
+
+		image_x = (image_page & 0xF) << 6;
+		image_y = ((image_page >> 6) & 0x1) * 256;
+
+		pallet_x = (pallet_page & 0x3f) << 4;
+		pallet_y = pallet_page >> 6;
+		
+		// Locate pallet image
+
+		for(k = 0; k < fb->nb_tex; k++) {
+			
+			if(pallet_x != fb->tex_list[k].pallet_x) {
+				continue;
+			}
+
+			if(pallet_y != fb->tex_list[k].pallet_y) {
+				continue;
+			}
+			
+
+
+		}
+
+	}
+
 
 }

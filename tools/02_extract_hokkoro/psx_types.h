@@ -58,8 +58,7 @@ typedef struct {
 	uint8_t nop;
 	uint32_t tri_ofs;
 	uint32_t quad_ofs;
-	uint16_t image_page;
-	uint16_t pallet_page;
+	uint32_t tex_page;
 	uint32_t vert_ofs;
 } PSX_EBD_Mesh;
 

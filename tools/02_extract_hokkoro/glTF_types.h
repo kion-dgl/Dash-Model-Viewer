@@ -43,10 +43,8 @@ typedef struct {
 } glTF_Primitive;
 
 typedef struct {
-	uint32_t pallet_x;
-	uint32_t pallet_y;
-	uint32_t image_x;
-	uint32_t image_y;
+	uint32_t tex_page;
+	uint32_t png_length;
 	uint32_t image_name[0x20];
 	float width;
 	float height;
