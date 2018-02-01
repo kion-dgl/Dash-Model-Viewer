@@ -45,7 +45,7 @@ typedef struct {
 typedef struct {
 	uint32_t tex_page;
 	uint32_t png_length;
-	uint32_t image_name[0x20];
+	char image_name[0x20];
 	float width;
 	float height;
 	uint8_t *png;

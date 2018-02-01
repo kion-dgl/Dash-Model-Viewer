@@ -1,5 +1,5 @@
 all:
-	gcc main.c
+	gcc main.c -lpng
 
 run:
 	./a.out ST09_00.BIN
