@@ -37,6 +37,8 @@ void psx_free_ebd_file(PSX_EBD_File *file);
 void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb);
 void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb);
 
+void glTF_export_model(glTF_Model *model, const char *filename);
+
 int main(int argc, char *argv[]) {
 
 	FILE *fp;
@@ -224,12 +226,14 @@ void psx_free_ebd_file(PSX_EBD_File *file) {
 void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 
 	uint8_t nb_prim;
-	uint32_t i, k, j, found, tmp, mat;
-	uint32_t mesh_ofs, *mats;
+	uint16_t indice[4];
+	uint32_t i, k, j, l, m, found, tmp, mat;
+	uint32_t index, mesh_ofs, *mats, nb_face, f;
 	glTF_Model model;
 	PSX_EBD_Mesh *psx_mesh;
 	PSX_EBD_Vertex *vert_list;
 	PSX_EBD_Face *tri_list, *quad_list;
+	float x, y, z, u, v, tex_u, tex_v;
 
 	for(i = 1; i < file->nb_model; i++) {
 
@@ -343,6 +347,9 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 			vert_list = malloc(psx_mesh[k].nb_vert * sizeof(PSX_EBD_Vertex));
 			tri_list = malloc(psx_mesh[k].nb_tri * sizeof(PSX_EBD_Face));
 			quad_list = malloc(psx_mesh[k].nb_quad * sizeof(PSX_EBD_Face));
+			
+			nb_face = psx_mesh[k].nb_tri + (psx_mesh[k].nb_quad * 2);
+			model.prim_list[k].face_list = malloc(sizeof(glTF_Face) * nb_face);
 
 			// Read Original Values
 
@@ -357,6 +364,140 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 			
 			// Convert Triangle List
 
+			f = 0;
+			tex_u = model.mat_list[mat].width;
+			tex_v = model.mat_list[mat].height;
+
+			for(j = 0; j < psx_mesh[k].nb_tri; j++) {
+				
+				for(l = 0; l < 3; l++) {
+					
+					index = tri_list[j].indice[l];
+					x = -0.01f * (float)vert_list[index].x;
+					y = -0.01f * (float)vert_list[index].y;
+					z = -0.01f * (float)vert_list[index].z;
+					u = (float)tri_list[j].coord[l].u / tex_u;
+					v = (float)tri_list[j].coord[l].v / tex_v;
+					
+					found = 0;
+
+					for(m = 0; m < model.nb_vert; m++) {
+						
+						if(model.vert_list[m].x != x) {
+							continue;
+						}
+						
+						if(model.vert_list[m].y != y) {
+							continue;
+						}
+						
+						if(model.vert_list[m].z != z) {
+							continue;
+						}
+						
+						if(model.vert_list[m].u != u) {
+							continue;
+						}
+
+						if(model.vert_list[m].z != z) {
+							continue;
+						}
+						
+						found = 1;
+						indice[l] = m;
+						break;
+
+					}
+
+					if(found) {
+						continue;
+					}
+
+					model.vert_list[model.nb_vert].x = x;
+					model.vert_list[model.nb_vert].y = y;
+					model.vert_list[model.nb_vert].z = z;
+					model.vert_list[model.nb_vert].u = u;
+					model.vert_list[model.nb_vert].v = v;
+
+					indice[l] = model.nb_vert;
+					model.nb_vert++;
+
+				}
+				
+				model.prim_list[k].face_list[f].a = indice[0];
+				model.prim_list[k].face_list[f].b = indice[1];
+				model.prim_list[k].face_list[f].c = indice[2];
+
+				f++;
+			}
+
+			for(j = 0; j < psx_mesh[k].nb_quad; j++) {
+				
+				for(l = 0; l < 4; l++) {
+					
+					index = tri_list[j].indice[l];
+					x = -0.01f * (float)vert_list[index].x;
+					y = -0.01f * (float)vert_list[index].y;
+					z = -0.01f * (float)vert_list[index].z;
+					u = (float)tri_list[j].coord[l].u / tex_u;
+					v = (float)tri_list[j].coord[l].v / tex_v;
+					
+					found = 0;
+
+					for(m = 0; m < model.nb_vert; m++) {
+						
+						if(model.vert_list[m].x != x) {
+							continue;
+						}
+						
+						if(model.vert_list[m].y != y) {
+							continue;
+						}
+						
+						if(model.vert_list[m].z != z) {
+							continue;
+						}
+						
+						if(model.vert_list[m].u != u) {
+							continue;
+						}
+
+						if(model.vert_list[m].z != z) {
+							continue;
+						}
+						
+						found = 1;
+						indice[l] = m;
+						break;
+
+					}
+
+					if(found) {
+						continue;
+					}
+
+					model.vert_list[model.nb_vert].x = x;
+					model.vert_list[model.nb_vert].y = y;
+					model.vert_list[model.nb_vert].z = z;
+					model.vert_list[model.nb_vert].u = u;
+					model.vert_list[model.nb_vert].v = v;
+
+					indice[l] = model.nb_vert;
+					model.nb_vert++;
+
+				}
+				
+				model.prim_list[k].face_list[f].a = indice[0];
+				model.prim_list[k].face_list[f].b = indice[1];
+				model.prim_list[k].face_list[f].c = indice[2];
+				f++;
+				
+				model.prim_list[k].face_list[f].a = indice[1];
+				model.prim_list[k].face_list[f].b = indice[3];
+				model.prim_list[k].face_list[f].c = indice[2];
+				f++;
+			}
+
 			// Free Memory
 
 			free(vert_list);
@@ -365,12 +506,19 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 
 		}
 
+		// Export Model
+	
+		glTF_export_model(&model, "output/hokkoro.glTF");
+
 		// End model parsing
 		
 		free(mats);
 		free(psx_mesh);
 		for(k = 0; k < model.nb_mat; k++) {
 			free(model.mat_list[k].png);
+		}
+		for(k = 0; k < model.nb_prim; k++) {
+			free(model.prim_list[k].face_list);
 		}
 		free(model.mat_list);
 		free(model.prim_list);
@@ -626,5 +774,39 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 
 	}
 
+}
+
+void glTF_export_model(glTF_Model *model, const char *filename) {
+	
+	float max_x, max_y, max_z;
+	float min_x, min_y, min_z;
+
+	FILE *fp = fopen(filename, "w");
+	if(fp == NULL) {
+		fprintf(stderr, "Unable to open %s for writing\n", filename);
+		return;
+	}
+	
+	fprintf(fp, "{" 
+		"\"asset\":{"
+			"\"generator\":\"Dash glTF Exporter\","
+			"\"version\":\"2.0\""
+		"},"
+		"\"scene\":0,"
+		"\"scenes\":["
+			"\"nodes\":[0]"
+		"],"
+		"\"nodes\":{"
+			"\"mesh\":0"
+		"},"
+		"\"meshes\":{"
+			"\"name\":\"hokkoro\","
+			"\"primitives\":[");
+			
+			//]
+		//}
+
+
+	fclose(fp);
 
 }
