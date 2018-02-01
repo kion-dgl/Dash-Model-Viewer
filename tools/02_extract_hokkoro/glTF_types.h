@@ -35,8 +35,6 @@ typedef struct {
 } glTF_Face;
 
 typedef struct {
-	uint32_t nb_vert;
-	glTF_Vertex *vert_list;
 	uint32_t nb_face;
 	glTF_Face *face_list;
 	uint32_t mat;
@@ -44,11 +42,11 @@ typedef struct {
 
 typedef struct {
 	uint32_t tex_page;
-	uint32_t png_length;
-	char image_name[0x20];
 	float width;
 	float height;
 	uint8_t *png;
+	uint32_t len;
+	char image_name[0x20];
 } glTF_Material;
 
 typedef struct {
@@ -56,4 +54,6 @@ typedef struct {
 	glTF_Material *mat_list;
 	uint32_t nb_prim;
 	glTF_Primitive *prim_list;
+	uint32_t nb_vert;
+	glTF_Vertex vert_list[1000];
 } glTF_Model;

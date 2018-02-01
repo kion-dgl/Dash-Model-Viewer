@@ -37,8 +37,6 @@ void psx_free_ebd_file(PSX_EBD_File *file);
 void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb);
 void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb);
 
-void glTF_write_png(uint8_t *bitmap, glTF_Model *model, uint32_t d, int m);
-
 int main(int argc, char *argv[]) {
 
 	FILE *fp;
@@ -226,10 +224,12 @@ void psx_free_ebd_file(PSX_EBD_File *file) {
 void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 
 	uint8_t nb_prim;
-	uint32_t i, k, j, found, tmp;
+	uint32_t i, k, j, found, tmp, mat;
 	uint32_t mesh_ofs, *mats;
 	glTF_Model model;
 	PSX_EBD_Mesh *psx_mesh;
+	PSX_EBD_Vertex *vert_list;
+	PSX_EBD_Face *tri_list, *quad_list;
 
 	for(i = 1; i < file->nb_model; i++) {
 
@@ -245,11 +245,10 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 		fseek(fp, mesh_ofs + 0x11, SEEK_SET);
 		fread(&nb_prim, sizeof(nb_prim), 1, fp);
 		printf("Number of primitives: %d\n", nb_prim);
-		nb_prim++;
 
 		// Read the header to each primitive
 
-		fseek(fp, mesh_ofs + 0x7c, SEEK_SET);
+		fseek(fp, mesh_ofs + 0x90, SEEK_SET);
 		psx_mesh = malloc(nb_prim * sizeof(PSX_EBD_Mesh));
 		fread(psx_mesh, sizeof(PSX_EBD_Mesh), nb_prim, fp);
 
@@ -315,12 +314,66 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 
 		glTF_read_textures(fp, &model, fb);
 
+		// Convert glTF Models
+		
+		model.nb_vert = 0;
+		model.nb_prim = nb_prim;
+		model.prim_list = malloc(sizeof(glTF_Primitive) * nb_prim);
+		
+		for(k = 0; k < nb_prim; k++) {
+			
+			printf("Reading primitive: %d\n", k);
+
+			// Find mat number
+
+			for(j = 0; j < model.nb_mat; j++) {
+				
+				if(psx_mesh[k].tex_page != model.mat_list[j].tex_page) {
+					continue;
+				}
+				
+				printf("Found material: %d\n", j);
+				model.prim_list[k].mat = j;
+				mat = j;
+				break;
+			}
+
+			// Allocate memory
+
+			vert_list = malloc(psx_mesh[k].nb_vert * sizeof(PSX_EBD_Vertex));
+			tri_list = malloc(psx_mesh[k].nb_tri * sizeof(PSX_EBD_Face));
+			quad_list = malloc(psx_mesh[k].nb_quad * sizeof(PSX_EBD_Face));
+
+			// Read Original Values
+
+			fseek(fp, psx_mesh[k].vert_ofs, SEEK_SET);
+			fread(vert_list, sizeof(PSX_EBD_Vertex), psx_mesh[k].nb_vert, fp);
+
+			fseek(fp, psx_mesh[k].tri_ofs, SEEK_SET);
+			fread(tri_list, sizeof(PSX_EBD_Face), psx_mesh[k].nb_tri, fp);
+			
+			fseek(fp, psx_mesh[k].quad_ofs, SEEK_SET);
+			fread(quad_list, sizeof(PSX_EBD_Face), psx_mesh[k].nb_quad, fp);
+			
+			// Convert Triangle List
+
+			// Free Memory
+
+			free(vert_list);
+			free(tri_list);
+			free(quad_list);
+
+		}
+
 		// End model parsing
 		
 		free(mats);
 		free(psx_mesh);
+		for(k = 0; k < model.nb_mat; k++) {
+			free(model.mat_list[k].png);
+		}
 		free(model.mat_list);
-
+		free(model.prim_list);
 		break;
 
 	}
@@ -331,6 +384,7 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 
 	int i, k;
+	FILE *wp;
 
 	int16_t index, x, y, bx, by, pos;
 	uint16_t pallet_page, pallet_x, pallet_y;
@@ -340,6 +394,14 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 	uint16_t *pallet, *image_body;
 	uint8_t byte, *bitmap, *c;
 	char inc, *slash;
+	
+	png_structp png_ptr;
+	png_infop info_ptr;
+	png_byte **row_ptr;
+
+	int pixel_size = 4;
+	int depth = 8;
+	uint8_t memory[MEMORY_SIZE];
 
 	for(i = 0; i < model->nb_mat; i++) {
 
@@ -430,6 +492,7 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 		strcpy(model->mat_list[i].image_name, slash);
 		model->mat_list[i].width = (float)width;
 		model->mat_list[i].height = (float)height;
+		model->mat_list[i].len = 0;
 		image_body = malloc(sizeof(uint16_t) * width * height);
 
 		// Read Image Body
@@ -469,20 +532,91 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 		bitmap = malloc(width * height * 4);
 		c = bitmap;
 
-		for(i = 0; i < width * height; i++) {
+		for(k = 0; k < width * height; k++) {
 			
-			*c++ = ((image_body[i] >> 0x00) & 0x1f) << 3;
-			*c++ = ((image_body[i] >> 0x05) & 0x1f) << 3;
-			*c++ = ((image_body[i] >> 0x0a) & 0x1f) << 3;
+			*c++ = ((image_body[k] >> 0x00) & 0x1f) << 3;
+			*c++ = ((image_body[k] >> 0x05) & 0x1f) << 3;
+			*c++ = ((image_body[k] >> 0x0a) & 0x1f) << 3;
 
-			if(image_body[i] == 0) {
+			if(image_body[k] == 0) {
 				*c++ = 0;
 			} else {
 				*c++ = 0xFF;
 			}
 		}
 		
-		glTF_write_png(bitmap, model, width_height, i);
+		// Create PNG
+		wp = fmemopen(memory, MEMORY_SIZE, "w");
+
+		png_ptr = png_create_write_struct(
+			PNG_LIBPNG_VER_STRING, 
+			NULL, 
+			NULL, 
+			NULL
+		);
+		if(png_ptr == NULL) {
+			fprintf(stderr, "Could not create png struct\n");
+			exit(1);
+		}
+
+		info_ptr = png_create_info_struct(png_ptr);
+		if(info_ptr == NULL) {
+			fprintf(stderr, "Could not create info struct\n");
+			exit(1);
+		}
+
+		if(setjmp(png_jmpbuf(png_ptr))) {
+			fprintf(stderr, "Could not set jmpbuf\n");
+			exit(1);
+		}
+	
+		png_set_IHDR(
+			png_ptr,
+			info_ptr,
+			width,
+			height,
+			depth,
+			PNG_COLOR_TYPE_RGBA,
+			PNG_INTERLACE_NONE,
+			PNG_COMPRESSION_TYPE_DEFAULT,
+			PNG_FILTER_TYPE_DEFAULT
+		);
+
+		row_ptr = png_malloc(png_ptr, height * sizeof(png_byte*));
+	
+		k = 0;
+		for(y = 0; y < height; y++) {
+			
+			png_byte *row = png_malloc(png_ptr, width * pixel_size);
+			row_ptr[y] = row;
+
+			for(x = 0; x < width; x++) {
+
+				*row++ = bitmap[k++];
+				*row++ = bitmap[k++];
+				*row++ = bitmap[k++];
+				*row++ = bitmap[k++];
+
+			}
+
+		}
+		
+		png_init_io(png_ptr, wp);
+		png_set_rows(png_ptr, info_ptr, row_ptr);
+		png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
+	
+		for(y = 0; y < height; y++) {
+			png_free(png_ptr, row_ptr[y]);
+		}
+		png_free(png_ptr, row_ptr);
+	
+		pos = ftell(fp);
+		model->mat_list[i].len = pos;
+
+		fclose(wp);
+
+		model->mat_list[i].png = malloc(model->mat_list[i].len);
+		memcpy(model->mat_list[i].png, memory, model->mat_list[i].len);
 
 		// Free assets from loop
 
@@ -492,110 +626,5 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 
 	}
 
-
-}
-
-void glTF_write_png(uint8_t *bitmap, glTF_Model *model, uint32_t d, int m) {
-
-	// Create PNG
-	
-	png_structp png_ptr;
-	png_infop info_ptr;
-	png_byte **row_ptr;
-
-	int i, x, y;
-	int pixel_size = 4;
-	int depth = 8;
-	int width, height;
-	uint8_t memory[MEMORY_SIZE];
-
-	width = d & 0xFFFF;
-	height = d >> 16;
-
-	FILE *wp;
-	wp = fmemopen(memory, MEMORY_SIZE, "w");
-
-	printf("001\n");
-
-	png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-	if(png_ptr == NULL) {
-		fprintf(stderr, "Could not create png struct\n");
-		exit(1);
-	}
-
-	info_ptr = png_create_info_struct(png_ptr);
-	if(info_ptr == NULL) {
-		fprintf(stderr, "Could not create info struct\n");
-		exit(1);
-	}
-
-	printf("002\n");
-
-	if(setjmp(png_jmpbuf(png_ptr))) {
-		fprintf(stderr, "Could not set jmpbuf\n");
-		exit(1);
-	}
-	
-	printf("003\n");
-
-	png_set_IHDR(
-		png_ptr,
-		info_ptr,
-		width,
-		height,
-		depth,
-		PNG_COLOR_TYPE_RGBA,
-		PNG_INTERLACE_NONE,
-		PNG_COMPRESSION_TYPE_DEFAULT,
-		PNG_FILTER_TYPE_DEFAULT
-	);
-
-	row_ptr = png_malloc(png_ptr, height * sizeof(png_byte*));
-	
-	printf("004\n");
-
-	i = 0;
-	for(y = 0; y < height; y++) {
-		
-		png_byte *row = png_malloc(png_ptr, width * pixel_size);
-		row_ptr[y] = row;
-
-		for(x = 0; x < width; x++) {
-
-			*row++ = bitmap[i++];
-			*row++ = bitmap[i++];
-			*row++ = bitmap[i++];
-			*row++ = bitmap[i++];
-
-		}
-
-	}
-	
-	printf("005\n");
-
-	png_init_io(png_ptr, wp);
-	png_set_rows(png_ptr, info_ptr, row_ptr);
-	png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
-	
-	printf("006\n");
-
-	for(y = 0; y < height; y++) {
-		png_free(png_ptr, row_ptr[y]);
-	}
-	
-	printf("007\n");
-
-	png_free(png_ptr, row_ptr);
-	
-	printf("7.5\n");
-
-	model->mat_list[m].png_length = ftell(wp);
-	
-	printf("008\n");
-
-	fclose(wp);
-
-	model->mat_list[m].png = malloc(model->mat_list[m].png_length + 1);
-	// memcpy(mat->png, memory, mat->png_length);
 
 }
