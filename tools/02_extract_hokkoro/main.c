@@ -39,6 +39,7 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb);
 void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb);
 
 void glTF_export_model(glTF_Model *model, const char *filename);
+void  glTF_export_obj(glTF_Model *model, const char *filename);
 
 int main(int argc, char *argv[]) {
 
@@ -437,12 +438,12 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 				
 				for(l = 0; l < 4; l++) {
 					
-					index = tri_list[j].indice[l];
+					index = quad_list[j].indice[l];
 					x = -0.01f * (float)vert_list[index].x;
 					y = -0.01f * (float)vert_list[index].y;
 					z = -0.01f * (float)vert_list[index].z;
-					u = (float)tri_list[j].coord[l].u / tex_u;
-					v = (float)tri_list[j].coord[l].v / tex_v;
+					u = (float)quad_list[j].coord[l].u / tex_u;
+					v = (float)quad_list[j].coord[l].v / tex_v;
 					
 					found = 0;
 
@@ -510,7 +511,8 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 
 		// Export Model
 	
-		glTF_export_model(&model, "output/hokkoro.glTF");
+		glTF_export_model(&model, "output/hokkoro.gltf");
+		glTF_export_obj(&model, "output/hokkoro");
 
 		// End model parsing
 		
@@ -780,7 +782,7 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 
 void glTF_export_model(glTF_Model *model, const char *filename) {
 	
-	int i, vert_len, face_ofs, face_len;
+	int i, vert_len, face_ofs, face_len, count;
 	float max_x, max_y, max_z;
 	float min_x, min_y, min_z;
 	size_t str_len, buffer_len, pos;
@@ -872,7 +874,7 @@ void glTF_export_model(glTF_Model *model, const char *filename) {
 			"\"mode\":4,"
 			"\"material\":%d"
 		"}", i+2, model->prim_list[i].mat);
-
+		
 	}
 	
 	fprintf(fp, "]}],\"accessors\":[");
@@ -895,19 +897,27 @@ void glTF_export_model(glTF_Model *model, const char *filename) {
 		"\"count\":%d,"
 		"\"type\":\"VEC2\""
 	"}", model->nb_vert);
-		
+	
+	face_ofs = 0;
 	for(i = 0; i < model->nb_prim; i++) {
 		
+		count = model->prim_list[i].nb_face * 3;
+		/*
+		if(i == 0) {
+			count = 3;
+		}
+		*/
+
 		fprintf(fp, ",{"
 			"\"bufferView\":2,"
 			"\"byteOffset\":%d,"
 			"\"componentType\":5123,"
 			"\"count\":%d,"
 			"\"type\":\"SCALAR\""
-		"}", face_ofs, model->prim_list[i].nb_face * 3);
+		"}", face_ofs, count);
 	
 		memcpy(
-			&buffer[face_ofs], 
+			&buffer[vert_len + face_ofs], 
 			model->prim_list[i].face_list, 
 			model->prim_list[i].nb_face * sizeof(glTF_Face)
 		);
@@ -958,7 +968,7 @@ void glTF_export_model(glTF_Model *model, const char *filename) {
 
 		b64enc(
 			model->mat_list[i].png, 
-			model->mat_list[i].len,
+			model->mat_list[i].len + 1,
 			memory,
 			MEMORY_SIZE,
 			&str_len
@@ -986,12 +996,21 @@ void glTF_export_model(glTF_Model *model, const char *filename) {
 		"\"byteStride\":%ld"
 	"}", vert_len - 12, sizeof(glTF_Vertex));
 
-	fprintf(fp, ",{"
-		"\"buffer\":0,"
-		"\"byteOffset\":%d,"
-		"\"byteLength\":%d"
-	"}", vert_len, face_len);
+	
+	/*
+	face_ofs = vert_len;
+	for(i = 0; i < model->nb_prim; i++) {
+	*/
 
+		fprintf(fp, ",{"
+			"\"buffer\":0,"
+			"\"byteOffset\":%d,"
+			"\"byteLength\":%d"
+		"}", vert_len, face_len);
+
+	/*
+	}
+	*/
 
 	b64enc(
 		buffer,
@@ -1009,5 +1028,72 @@ void glTF_export_model(glTF_Model *model, const char *filename) {
 
 	fclose(fp);
 	free(buffer);
+
+}
+
+void  glTF_export_obj(glTF_Model *model, const char *filename) {
+
+	int i, k;
+	char file_name[0x20], *dot;
+	FILE *fp;
+
+	for(i = 0; i < model->nb_mat; i++) {
+
+		strcpy(file_name, "output/");
+		strcat(file_name, model->mat_list[i].image_name);
+		dot = strrchr(file_name, '.') + 1;
+		*dot++ = 'p';
+		*dot++ = 'n';
+		*dot++ = 'g';
+		printf("Outname: %s\n", file_name);
+
+		fp = fopen(file_name, "w");
+		fwrite(model->mat_list[i].png, model->mat_list[i].len, 1, fp);
+		fclose(fp);
+
+	}
+
+	fp = fopen("output/hokkoro.obj", "w");
+
+	for(i = 0; i < model->nb_vert; i++) {
+
+		fprintf(fp, "v %f %f %f\n", 
+			model->vert_list[i].x,
+			model->vert_list[i].y,
+			model->vert_list[i].z
+		);
+
+	}
+
+	fprintf(fp, "\n");
+
+	for(i = 0; i < model->nb_vert; i++) {
+
+		fprintf(fp, "vt %f %f\n", 
+			model->vert_list[i].u,
+			model->vert_list[i].v
+		);
+
+	}
+
+	fprintf(fp, "\n");
+
+	for(i = 0; i < model->nb_prim; i++) {
+
+		for(k = 0; k < model->prim_list[i].nb_face; k++) {
+			fprintf(fp, "f %d//%d %d//%d %d//%d\n", 
+				model->prim_list[i].face_list[k].a + 1,
+				model->prim_list[i].face_list[k].a + 1,
+				model->prim_list[i].face_list[k].b + 1,
+				model->prim_list[i].face_list[k].b + 1,
+				model->prim_list[i].face_list[k].c + 1,
+				model->prim_list[i].face_list[k].c + 1
+			);
+		}
+
+	}
+
+
+	fclose(fp);
 
 }
