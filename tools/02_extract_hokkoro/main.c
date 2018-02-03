@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include "glTF_types.h"
 #include "psx_types.h"
+#include "b64codec.h"
 
 #define MEMORY_SIZE 1024 * 1024
 
@@ -350,6 +351,7 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 			
 			nb_face = psx_mesh[k].nb_tri + (psx_mesh[k].nb_quad * 2);
 			model.prim_list[k].face_list = malloc(sizeof(glTF_Face) * nb_face);
+			model.prim_list[k].nb_face = nb_face;
 
 			// Read Original Values
 
@@ -778,8 +780,11 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 
 void glTF_export_model(glTF_Model *model, const char *filename) {
 	
+	int i, vert_len, face_ofs, face_len;
 	float max_x, max_y, max_z;
 	float min_x, min_y, min_z;
+	size_t str_len, buffer_len, pos;
+	uint8_t *buffer, memory[MEMORY_SIZE];
 
 	FILE *fp = fopen(filename, "w");
 	if(fp == NULL) {
@@ -787,6 +792,55 @@ void glTF_export_model(glTF_Model *model, const char *filename) {
 		return;
 	}
 	
+
+	max_x = 0.0f;
+	max_y = 0.0f;
+	max_z = 0.0f;
+
+	min_x = 0.0f;
+	min_y = 0.0f;
+	min_z = 0.0f;
+
+	vert_len = model->nb_vert * sizeof(glTF_Vertex);
+	face_len = 0;
+	for(i = 0; i < model->nb_prim; i++) {
+		face_len += model->prim_list[i].nb_face * sizeof(glTF_Face);
+	}
+	face_ofs = vert_len;
+
+	buffer_len = vert_len + face_len;
+	buffer = malloc(buffer_len);
+
+	memcpy(buffer, model->vert_list, vert_len);
+
+	for(i = 0; i < model->nb_vert; i++) {
+
+		if(model->vert_list[i].x < min_x) {
+			min_x = model->vert_list[i].x;
+		}
+
+		if(model->vert_list[i].y < min_y) {
+			min_y = model->vert_list[i].y;
+		}
+
+		if(model->vert_list[i].z < min_z) {
+			min_z = model->vert_list[i].z;
+		}
+
+		if(model->vert_list[i].x > max_x) {
+			max_x = model->vert_list[i].x;
+		}
+
+		if(model->vert_list[i].y > max_y) {
+			max_y = model->vert_list[i].y;
+		}
+
+		if(model->vert_list[i].z > max_z) {
+			max_z = model->vert_list[i].z;
+		}
+
+	}
+
 	fprintf(fp, "{" 
 		"\"asset\":{"
 			"\"generator\":\"Dash glTF Exporter\","
@@ -794,19 +848,166 @@ void glTF_export_model(glTF_Model *model, const char *filename) {
 		"},"
 		"\"scene\":0,"
 		"\"scenes\":["
-			"\"nodes\":[0]"
+			"{\"nodes\":[0]}"
 		"],"
-		"\"nodes\":{"
+		"\"nodes\":[{"
 			"\"mesh\":0"
-		"},"
-		"\"meshes\":{"
+		"}],"
+		"\"meshes\":[{"
 			"\"name\":\"hokkoro\","
 			"\"primitives\":[");
-			
-			//]
-		//}
 
+	for(i = 0; i < model->nb_prim; i++) {
+		
+		if(i) {
+			fprintf(fp, ",");
+		}
+
+		fprintf(fp, "{"
+			"\"attributes\":{"
+				"\"POSITION\":0,"
+				"\"TEXCOORD_0\":1"
+			"},"
+			"\"indices\":%d,"
+			"\"mode\":4,"
+			"\"material\":%d"
+		"}", i+2, model->prim_list[i].mat);
+
+	}
+	
+	fprintf(fp, "]}],\"accessors\":[");
+	
+	fprintf(fp, "{"
+		"\"bufferView\":0,"
+		"\"byteOffset\":0,"
+		"\"componentType\":5126,"
+		"\"count\":%d,"
+		"\"type\":\"VEC3\","
+		"\"min\":[%f,%f,%f],"
+		"\"max\":[%f,%f,%f]"
+	"}", model->nb_vert,
+		min_x, min_y, min_z,
+		max_x, max_y, max_z);
+	fprintf(fp,",{"
+		"\"bufferView\":1,"
+		"\"byteOffset\":0,"
+		"\"componentType\":5126,"
+		"\"count\":%d,"
+		"\"type\":\"VEC2\""
+	"}", model->nb_vert);
+		
+	for(i = 0; i < model->nb_prim; i++) {
+		
+		fprintf(fp, ",{"
+			"\"bufferView\":2,"
+			"\"byteOffset\":%d,"
+			"\"componentType\":5123,"
+			"\"count\":%d,"
+			"\"type\":\"SCALAR\""
+		"}", face_ofs, model->prim_list[i].nb_face * 3);
+	
+		memcpy(
+			&buffer[face_ofs], 
+			model->prim_list[i].face_list, 
+			model->prim_list[i].nb_face * sizeof(glTF_Face)
+		);
+
+		face_ofs += (model->prim_list[i].nb_face * sizeof(glTF_Face));
+
+	}
+
+	fprintf(fp, "],\"materials\":[");
+
+	for(i = 0; i < model->nb_mat; i++) {
+		
+		if(i > 0) {
+			fprintf(fp, ",");
+		}
+
+		fprintf(fp, "{"
+			"\"pbrMetallicRoughness\":{"
+				"\"baseColorTexture\":{"
+					"\"index\":%d"
+				"},"
+				"\"metallicFactor\":0.0"
+			"},"
+			"\"emissiveFactor\":[0.0,0.0,0.0],"
+			"\"name\":\"%s\""
+		"}", i, model->mat_list[i].image_name);
+
+	}
+
+	fprintf(fp, "],\"textures\":[");
+	
+	for(i = 0; i < model->nb_mat; i++) {
+
+		if(i > 0) {
+			fprintf(fp, ",");
+		}
+
+		fprintf(fp, "{\"source\":%d}", i);
+	}
+
+	fprintf(fp, "],\"images\":[");
+
+	for(i = 0; i < model->nb_mat; i++) {
+		
+		if(i > 0) {
+			fprintf(fp, ",");
+		}
+
+		b64enc(
+			model->mat_list[i].png, 
+			model->mat_list[i].len,
+			memory,
+			MEMORY_SIZE,
+			&str_len
+		);
+
+		fprintf(fp, "{"
+			"\"uri\":\"data:image/png;base64,%s\""
+		"}", memory);
+
+	}
+
+	fprintf(fp, "],\"bufferViews\":[");
+
+	fprintf(fp, "{"
+		"\"buffer\":0,"
+		"\"byteOffset\":0,"
+		"\"byteLength\":%d,"
+		"\"byteStride\":%ld"
+	"}", vert_len - 8, sizeof(glTF_Vertex));
+
+	fprintf(fp, ",{"
+		"\"buffer\":0,"
+		"\"byteOffset\":12,"
+		"\"byteLength\":%d,"
+		"\"byteStride\":%ld"
+	"}", vert_len - 12, sizeof(glTF_Vertex));
+
+	fprintf(fp, ",{"
+		"\"buffer\":0,"
+		"\"byteOffset\":%d,"
+		"\"byteLength\":%d"
+	"}", vert_len, face_len);
+
+
+	b64enc(
+		buffer,
+		buffer_len + 1,
+		memory,
+		MEMORY_SIZE,
+		&str_len
+	);
+
+	fprintf(fp, "],\"buffers\":[");
+	fprintf(fp, "{"
+		"\"byteLength\":%ld,"
+		"\"uri\":\"data:application/octet-stream;base64,%s\""
+	"}]}", buffer_len, memory);
 
 	fclose(fp);
+	free(buffer);
 
 }

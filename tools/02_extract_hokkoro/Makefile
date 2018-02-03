@@ -1,5 +1,5 @@
 all:
-	gcc main.c -lpng
+	gcc b64codec.c main.c -lpng
 
 run:
 	./a.out ST09_00.BIN
