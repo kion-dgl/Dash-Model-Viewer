@@ -5,6 +5,7 @@
 *.png
 *.swp
 *.glTF
+*.gltf
 *.obj
 *.glb
 *.tmp
