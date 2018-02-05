@@ -27,7 +27,7 @@
 #include "psx_types.h"
 #include "b64codec.h"
 
-#define MEMORY_SIZE 1024 * 1024
+#define MEMORY_SIZE 0xFFFFFFFF
 
 void psx_read_framebuffer(FILE *fp, PSX_Framebuffer *fb);
 void psx_free_framebuffer(PSX_Framebuffer *fb);
@@ -38,8 +38,8 @@ void psx_free_ebd_file(PSX_EBD_File *file);
 void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb);
 void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb);
 
-void glTF_export_model(glTF_Model *model, int num);
-void glTF_export_obj(glTF_Model *model, const char *filename);
+void glTF_export_model(glTF_Model *model, const char *filename);
+void  glTF_export_obj(glTF_Model *model, const char *filename);
 
 int main(int argc, char *argv[]) {
 
@@ -237,9 +237,9 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 	PSX_EBD_Face *tri_list, *quad_list;
 	float x, y, z, u, v, tex_u, tex_v;
 
-	for(i = 2; i < file->nb_model; i++) {
+	for(i = 0; i < file->nb_model; i++) {
 
-		printf("\n\nStarting model number: %d\n", i);
+		printf("\n\nStarting model: %d\n", i);
 
 		// Get Start of mesh
 
@@ -320,11 +320,7 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 			printf("Material num: 0x%08x\n", mats[k]);
 		}
 
-		printf("Reading textures\n");
-
 		glTF_read_textures(fp, &model, fb);
-
-		printf("Finished reading textures\n");
 
 		// Convert glTF Models
 		
@@ -517,7 +513,8 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 
 		// Export Model
 	
-		glTF_export_model(&model, i);
+		glTF_export_model(&model, "output/hokkoro.gltf");
+		glTF_export_obj(&model, "output/hokkoro");
 
 		// End model parsing
 		
@@ -557,6 +554,8 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 
 	int pixel_size = 4;
 	int depth = 8;
+	uint8_t *memory;
+	memory = malloc(MEMORY_SIZE);
 
 	for(i = 0; i < model->nb_mat; i++) {
 
@@ -596,8 +595,6 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 			exit(1);
 		}
 
-		printf("Found pallet page\n");
-
 		index = -1;
 
 		for(k = fb->nb_tex; k >= 0; --k) {
@@ -620,8 +617,6 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 			exit(1);
 		}
 		
-		printf("Found image\n");
-
 		// Convert Image to bitmap
 
 		fseek(fp, fb->tex_list[index].offset + 0x800, SEEK_SET);
@@ -656,8 +651,6 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 
 		// Read Image Body
 
-		printf("Reading image body\n");
-
 		for(y = 0; y < height; y += block_height) {
 			for(x = 0; x < width; x += block_width) {
 				for(by = 0; by < block_height; by++) {
@@ -686,8 +679,6 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 				}
 			}
 		}
-	
-		printf("Creating bitmap\n");
 
 		// Create Bitmap
 
@@ -708,10 +699,8 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 			}
 		}
 		
-		printf("Creating png\n");
-
 		// Create PNG
-		wp = fopen("tmp.png", "w");
+		wp = fmemopen(memory, MEMORY_SIZE, "w");
 
 		png_ptr = png_create_write_struct(
 			PNG_LIBPNG_VER_STRING, 
@@ -769,32 +758,19 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 		png_init_io(png_ptr, wp);
 		png_set_rows(png_ptr, info_ptr, row_ptr);
 		png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
-
-		printf("Cleaning memory\n");
-
+	
 		for(y = 0; y < height; y++) {
 			png_free(png_ptr, row_ptr[y]);
 		}
 		png_free(png_ptr, row_ptr);
 	
-		printf("Getting file position\n");
-
 		pos = ftell(fp);
 		model->mat_list[i].len = pos;
 
-		printf("Closing file pointer\n");
-
-		fclose(wp);
-		
-		printf("Copy png to memory %04x\n", pos);
-
-		model->mat_list[i].png = malloc(pos);
-
-		wp = fopen("tmp.png", "r");
-		fread(model->mat_list[i].png, sizeof(uint8_t), pos, wp);
 		fclose(wp);
 
-		printf("Png copied to memory\n");
+		model->mat_list[i].png = malloc(model->mat_list[i].len);
+		memcpy(model->mat_list[i].png, memory, model->mat_list[i].len);
 
 		// Free assets from loop
 
@@ -804,18 +780,18 @@ void glTF_read_textures(FILE *fp, glTF_Model *model, PSX_Framebuffer *fb) {
 
 	}
 
+	free(memory);
+
 }
 
-void glTF_export_model(glTF_Model *model, int num) {
+void glTF_export_model(glTF_Model *model, const char *filename) {
 	
 	int i, vert_len, face_ofs, face_len, count;
 	float max_x, max_y, max_z;
 	float min_x, min_y, min_z;
 	size_t str_len, buffer_len, pos;
-	uint8_t *buffer, memory[MEMORY_SIZE];
-	char filename[0x30];
-	
-	sprintf(filename, "output/model_%02d.gltf", num);
+	uint8_t *buffer, *memory;
+	memory = malloc(MEMORY_SIZE);
 
 	FILE *fp = fopen(filename, "w");
 	if(fp == NULL) {
@@ -1057,6 +1033,7 @@ void glTF_export_model(glTF_Model *model, int num) {
 
 	fclose(fp);
 	free(buffer);
+	free(memory);
 
 }
 
