@@ -10,3 +10,4 @@
 *.glb
 *.tmp
 *.json
+node_modules/*
