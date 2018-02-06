@@ -3,12 +3,30 @@
 const fs = require("fs");
 const path = require("path");
 const async = require("async");
+const PNG = require("pngjs").PNG;
+
+/*
+
+Index Number of Primitives Bone Anim    Name     Image Page Pallet Page Texture
+0     9                    yes  yes  arukoitan                          EM0200
+1     5                    yes  yes  hokkoro                            EM0300
+2     5                    yes  yes  shekuten                           EM0400
+3     2                    yes  no   orudakoitan                        EM0e00
+4     11                   yes  yes  junkshop                           EM1300B
+5     1                    no   no   mouse                              MOUSE
+6     4                    yes  yes  mirumijee                          EM0400
+7     2                    yes  yes  chest                              EM3500
+
+*/
 
 var ofs = 0;
 var fp = fs.readFileSync(process.argv[2]);
 var framebuffer = [];
 var model_list = [];
 var offset = null;
+var index = 0;
+
+var mat_lookup = [3, 4, 5, 6, 7, 8, 5, 9];
 
 do {
 
@@ -27,34 +45,22 @@ do {
 	if(ext.localeCompare(".TIM") !== 0) {
 		continue;
 	}
-
-	var x_bin = fp.readUInt32LE(ofs + 0x1C).toString(2);
-	var y_bin = fp.readUInt32LE(ofs + 0x20).toString(2);
-
-	while(x_bin.length < 16) {
-		x_bin = "0" + x_bin;
-	}
-
-	while(y_bin.length < 16) {
-		y_bin = "0" + y_bin;
-	}
-
+	
 	framebuffer.push({
+		"index" : index++,
 		"offset": ofs,
-		"pallet" : {
-			"x" : fp.readUInt32LE(ofs + 0x0c),
-			"y" : fp.readUInt32LE(ofs + 0x10),
-			"nb_colors" : fp.readUInt32LE(ofs + 0x14),
-			"nb_pallet" : fp.readUInt32LE(ofs + 0x18),
-		},
-		"image" : {
-			"x" : fp.readUInt32LE(ofs + 0x1C),
-			"y" : fp.readUInt32LE(ofs + 0x20),
-			"width" : fp.readUInt32LE(ofs + 0x24),
-			"height" : fp.readUInt32LE(ofs + 0x28),
-			"x_bin" : x_bin,
-			"y_bin" : y_bin
-		},
+		"pallet_x" : fp.readUInt32LE(ofs + 0x0c),
+		"pallet_y" : fp.readUInt32LE(ofs + 0x10),
+		"nb_colors" : fp.readUInt32LE(ofs + 0x14),
+		"nb_pallet" : fp.readUInt32LE(ofs + 0x18),
+		"pallet_x_bin" : fp.readUInt32LE(ofs + 0x0c).toString(2),
+		"pallet_y_bin" : fp.readUInt32LE(ofs + 0x10).toString(2),
+		"image_x" : fp.readUInt32LE(ofs + 0x1C),
+		"image_y" : fp.readUInt32LE(ofs + 0x20),
+		"width" : fp.readUInt32LE(ofs + 0x24),
+		"height" : fp.readUInt32LE(ofs + 0x28),
+		"image_x_bin" : fp.readUInt32LE(ofs + 0x1C).toString(2),
+		"image_y_bin" : fp.readUInt32LE(ofs + 0x20).toString(2),
 		"name" : str.replace(/\0/g, "")
 	});
 
@@ -78,6 +84,7 @@ ofs = offset + 0x804;
 for(var i = 0; i < nb_models; i++) {
 	
 	var mdl = {
+		"index" : i,
 		"mesh_ofs" : fp.readUInt32LE(ofs + 0x04),
 		"bone_ofs" : fp.readUInt32LE(ofs + 0x08),
 		"anim_ofs" : fp.readUInt32LE(ofs + 0x0c)
@@ -107,12 +114,29 @@ for(var i = 0; i < nb_models; i++) {
 
 }
 
+model_list = [
+	model_list[0],
+	model_list[1],
+	model_list[2],
+	model_list[3],
+	model_list[4],
+	model_list[5],
+	model_list[6],
+	model_list[7]
+];
+
 async.eachSeries(model_list, function(model, nextModel) {
 
 	var ofs = model.mesh_ofs;
 	model.nb_prim = fp.readUInt8(ofs + 0x11);
-	model.prim = [];
 
+	model.prim = [];
+	model.mats = [];
+	model.imgs = [];
+
+	console.log("\nSTARTING INDEX: %d", model.index);
+	console.log("Number of primitives: %d", model.nb_prim);
+	
 	// Read primitive header
 
 	ofs += 0x90;
@@ -125,8 +149,9 @@ async.eachSeries(model_list, function(model, nextModel) {
 			"bone" : fp.readUInt8(ofs + 0x03),
 			"tri_ofs" : fp.readUInt32LE(ofs + 0x04),
 			"quad_ofs" : fp.readUInt32LE(ofs + 0x08),
-			"image_page" : fp.readUInt32LE(ofs + 0x0c),
-			"pallet_page" : fp.readUInt32LE(ofs + 0x0e),
+			"image_page" : fp.readUInt16LE(ofs + 0x0c),
+			"pallet_page" : fp.readUInt16LE(ofs + 0x0e),
+			"texture" : fp.readUInt32LE(ofs + 0x0C),
 			"vert_ofs" : fp.readUInt32LE(ofs + 0x10)
 		};
 
@@ -153,7 +178,125 @@ async.eachSeries(model_list, function(model, nextModel) {
 
 	}
 
-	
+	for(var i = 0; i < model.nb_prim; i++) {
+		
+		var image_page = model.prim[i].image_page;
+		var pallet_page = model.prim[i].pallet_page;
+		var texture = model.prim[i].texture;
+		
+		if(model.mats.indexOf(texture) === -1) {
+			model.mats.push(texture);
+		}
+
+	}
+
+	// Ideally we'd find the pallet and image, lookup table for now
+
+	for(var i = 0; i < model.mats.length; i++) {
+		
+		var y, x, by, bx, pos, byte;
+		var block_width, block_height, inc;
+
+		var pallet_frame = framebuffer[mat_lookup[model.index]];
+		var image_frame = framebuffer[mat_lookup[model.index]];
+
+		var nb_colors = pallet_frame.nb_colors;
+		var width = image_frame.width;
+		var height = image_frame.height;
+
+		var pallet = [];
+		var image_body = [];
+		ofs = pallet_frame.offset + 0x100;
+		for(var k = 0; k < nb_colors; k++) {
+			pallet.push(fp.readUInt16LE(ofs));
+			ofs += 0x02;
+		}
+		
+		console.log("number of colors: %d", nb_colors);
+
+		switch(nb_colors) {
+			case 16:
+				
+				width *= 4;
+				inc = 2;
+				block_height = 32;
+				block_width = 128;
+
+			break;
+			case 256:
+				
+				width *= 2;
+				inc = 1;
+				block_height = 32;
+				block_width = 64;
+
+			break;
+		}
+
+		// Start body generate
+
+		ofs = image_frame.offset + 0x800;
+
+		for(y = 0; y < height; y += block_height) {
+			for(x = 0; x < width; x += block_width) {
+				for(by = 0; by < block_height; by++) {
+					for(bx = 0; bx < block_width; bx += inc) {
+						
+						byte = fp.readUInt8(ofs++);
+
+						switch(nb_colors) {
+							case 16:
+								
+								pos = ((y + by) * width) + (x + bx);
+								image_body[pos] = pallet[byte & 0xf];
+								pos = ((y + by) * width) + (x + bx + 1);
+								image_body[pos] = pallet[byte >> 4];
+
+							break;
+							case 256:
+
+								pos = ((y + by) * width) + (x + bx);
+								image_body[pos] = pallet[byte];
+
+							break;
+						}
+
+					}
+				}
+			}
+		}
+		
+		// End body generate
+
+		ofs = 0;
+		var buffer = Buffer.alloc(image_body.length * 4);
+		
+		for(var k = 0; k < image_body.length; k++) {
+			
+			buffer[ofs++] = ((image_body[k] >> 0x00) & 0x1f) << 3;
+			buffer[ofs++] = ((image_body[k] >> 0x05) & 0x1f) << 3;
+			buffer[ofs++] = ((image_body[k] >> 0x0a) & 0x1f) << 3;
+
+			if(image_body[k] === 0) {
+				buffer[ofs++] = 0;
+			} else {
+				buffer[ofs++] = 0xFF;
+			}
+
+		}
+		
+		var image = {
+			"width" : width,
+			"height" : height,
+			"name" : image_frame.name,
+			"data" : buffer
+		};
+
+		var png_buffer = PNG.sync.write(image);
+		var png_str = png_buffer.toString("base64");
+		
+		fs.writeFileSync("tmp.png", png_buffer);
+	}	
 
 	// Read Vertice and Face Lists
 
@@ -249,7 +392,6 @@ async.eachSeries(model_list, function(model, nextModel) {
 
 	});
 
-	console.log(model);
 	// nextModel();
 	process.exit(0);
 
