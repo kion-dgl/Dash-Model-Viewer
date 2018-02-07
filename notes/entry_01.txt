@@ -1,0 +1,39 @@
+Since I am unable to login to gtk.dashgl.com at the moment, i'll write some 
+notes here, which I can copy and paste as blog posts later. 
+
+After porting my code to Nodejs, I was able to get the first primitive of
+each mesh exported as a gltf file with no errors. The next step is to export
+all of the primitives in each model and then start thinking about bones.
+
+When it comes to bones, there are a few issues that I will need to be thinking
+about. I'll likely have to declare a bone 0 with no vertices at the origin
+for the model projection matrix to be applied to. Otherwise all of the
+primitives would be realive to the first primitive. And I would imagine that's
+not how these models were put together.
+
+And the next issue I need to be aware of is how bones are declared in the gltf
+format. As far as I can tell bones are delared as nodes. Which means I need to
+declare a list of transformations as nodes, with a model being the last node 
+delcared in the file. And then use vertex weights to delcare which bone each
+primitive is attached to. So looking at example models seems like a good place
+to start.
+
+And the last issue that I need to be aware of is how the bones are actually put 
+together. The source code that I am using as an example requires both the bones
+and the first frame from an animation for the model to actually be in the right
+position. So even if I read the bones and apply them, it might not be enough for
+the model to be in a proper T-pose.
+
+At least I got meshes working, so we'll just keep going with trial and error to
+see what results we get. And pair that with editing the game data to see what
+effects result when changing or removing certain values. Though that being said,
+when we removed the animation pointer from Roll's model in ST03_00A.EBD, the 
+model still displayed correctly in game, so there is hope. 
+
+And last thought for this post is I'm wondering if I should use bones in the 
+gltf format, or if I should try testing by applying the transformations to the
+vertices myself when exporting. Overall though, I think this point is kind of
+moot, because either way it's doing the same thing, and if I transition into 
+animations, then there is little difference in how these are set up. So I think 
+I'll try using the bone structure in gltf, since that will let me define 
+children and do the transformations for me, and I'll only have to set the values.
