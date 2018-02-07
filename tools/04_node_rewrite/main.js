@@ -27,6 +27,16 @@ var offset = null;
 var index = 0;
 
 var mat_lookup = [3, 4, 5, 6, 7, 8, 5, 9];
+var name_lookup = [
+	"arukoitan.gltf",
+	"hokkoro.gltf",
+	"shekuten.gltf",
+	"orudakoitan.gltf",
+	"junkshop.gltf",
+	"mouse.gltf",
+	"mirumijee.gltf",
+	"chest.gltf"
+];
 
 do {
 
@@ -133,6 +143,8 @@ async.eachSeries(model_list, function(model, nextModel) {
 	model.prim = [];
 	model.mats = [];
 	model.imgs = [];
+	model.vert_list = [];
+	model.face_list = [];
 
 	console.log("\nSTARTING INDEX: %d", model.index);
 	console.log("Number of primitives: %d", model.nb_prim);
@@ -286,6 +298,7 @@ async.eachSeries(model_list, function(model, nextModel) {
 		}
 		
 		var image = {
+			"texture" : model.mats[i],
 			"width" : width,
 			"height" : height,
 			"name" : image_frame.name,
@@ -293,21 +306,41 @@ async.eachSeries(model_list, function(model, nextModel) {
 		};
 
 		var png_buffer = PNG.sync.write(image);
-		var png_str = png_buffer.toString("base64");
+		image.base64 = png_buffer.toString("base64");
+		model.imgs.push(image);
 		
-		fs.writeFileSync("tmp.png", png_buffer);
 	}	
 
 	// Read Vertice and Face Lists
 
 	model.prim.forEach(function(prim) {
 
+		if(prim.bone > 0) {
+			return;
+		}
+
+		var texture = prim.texture;
+		for(var i = 0; i < model.imgs.length; i++) {
+			if(model.imgs[i].texture !== texture) {
+				continue;
+			}
+
+			prim.mat = i;
+			break;
+		}
+		
+		var image = model.imgs[prim.mat];
+		console.log("Material: %d\n", prim.mat);
+
 		var ofs = prim.vert_ofs;
-		prim.vert_list = [];
+		var vert_list = [];
+		prim.face_list = [];
+		var indices = new Array(4);
 
 		for(var i = 0; i < prim.nb_vert; i++) {
 			
-			prim.vert_list.push({
+			vert_list.push({
+				"b" : prim.bone,
 				"x" : fp.readInt16LE(ofs + 0x00) * -0.01,
 				"y" : fp.readInt16LE(ofs + 0x02) * -0.01,
 				"z" : fp.readInt16LE(ofs + 0x04) * -0.01,
@@ -316,14 +349,13 @@ async.eachSeries(model_list, function(model, nextModel) {
 			ofs += 0x08;
 		}
 		
-		prim.face_list = [];
+
 		if(prim.tri_ofs) {
 			ofs = prim.tri_ofs;
 			
 			for(var i = 0; i < prim.nb_tri; i++) {
 				
-				prim.face_list.push({
-					"type" : "tri",
+				var face = {
 					"tex_coords" : [
 						{
 							"u" : fp.readUInt8(ofs + 0x00), 
@@ -343,21 +375,87 @@ async.eachSeries(model_list, function(model, nextModel) {
 						fp.readUInt8(ofs + 0x09),
 						fp.readUInt8(ofs + 0x0a)
 					]
-				});
+				};
 				
 				ofs += 0x0c;
+				
+				for(var k = 0; k < 3; k++) {
+					
+					var v = {};
+					v.b = vert_list[face.indices[k]].b;
+					v.x = vert_list[face.indices[k]].x;
+					v.y = vert_list[face.indices[k]].y;
+					v.z = vert_list[face.indices[k]].z;
+					v.u = face.tex_coords[k].u / image.width;
+					v.v = face.tex_coords[k].v / image.height;
+					
+					console.log("%s, %s, %s, %s, %s", 
+						v.x.toFixed(2),
+						v.y.toFixed(2),
+						v.z.toFixed(2),
+						v.u.toFixed(2),
+						v.v.toFixed(2)
+					);
+
+					var found = false;
+					
+					for(var j = 0; j < model.vert_list.length; j++) {
+						
+						if(model.vert_list[j].b !== v.b) {
+							continue;
+						}
+						
+						if(model.vert_list[j].x !== v.x) {
+							continue;
+						}
+						
+						if(model.vert_list[j].y !== v.y) {
+							continue;
+						}
+						
+						if(model.vert_list[j].z !== v.z) {
+							continue;
+						}
+						
+						if(model.vert_list[j].u !== v.u) {
+							continue;
+						}
+						
+						if(model.vert_list[j].v !== v.v) {
+							continue;
+						}
+						
+						found = true;
+						indices[k] = j;
+						break;
+					}
+
+					if(found) {
+						continue;
+					}
+					
+					indices[k] = model.vert_list.length;
+					model.vert_list.push(v);
+
+				}
+				
+				prim.face_list.push(
+					indices[0],
+					indices[1],
+					indices[2]
+				);
+
 
 			}
-
+			
 		}
-		
+
 		if(prim.quad_ofs) {
 			ofs = prim.quad_ofs;
 			
 			for(var i = 0; i < prim.nb_quad; i++) {
 				
-				prim.face_list.push({
-					"type" : "quad",
+				var face = {
 					"tex_coords" : [
 						{
 							"u" : fp.readUInt8(ofs + 0x00), 
@@ -382,18 +480,325 @@ async.eachSeries(model_list, function(model, nextModel) {
 						fp.readUInt8(ofs + 0x0a),
 						fp.readUInt8(ofs + 0x0b)
 					]
-				});
+				};
 				
 				ofs += 0x0c;
+				
+				for(var k = 0; k < 4; k++) {
+					
+					var v = {};
+					v.b = vert_list[face.indices[k]].b;
+					v.x = vert_list[face.indices[k]].x;
+					v.y = vert_list[face.indices[k]].y;
+					v.z = vert_list[face.indices[k]].z;
+					v.u = face.tex_coords[k].u / image.width;
+					v.v = face.tex_coords[k].v / image.height;
+					
+					console.log("%s, %s, %s, %s, %s", 
+						v.x.toFixed(2),
+						v.y.toFixed(2),
+						v.z.toFixed(2),
+						v.u.toFixed(2),
+						v.v.toFixed(2)
+					);
+
+					var found = false;
+					
+					for(var j = 0; j < model.vert_list.length; j++) {
+						
+						if(model.vert_list[j].b !== v.b) {
+							continue;
+						}
+						
+						if(model.vert_list[j].x !== v.x) {
+							continue;
+						}
+						
+						if(model.vert_list[j].y !== v.y) {
+							continue;
+						}
+						
+						if(model.vert_list[j].z !== v.z) {
+							continue;
+						}
+						
+						if(model.vert_list[j].u !== v.u) {
+							continue;
+						}
+						
+						if(model.vert_list[j].v !== v.v) {
+							continue;
+						}
+						
+						found = true;
+						indices[k] = j;
+						break;
+					}
+
+					if(found) {
+						continue;
+					}
+					
+					indices[k] = model.vert_list.length;
+					model.vert_list.push(v);
+
+				}
+				
+				prim.face_list.push(
+					indices[0],
+					indices[1],
+					indices[2]
+				);
+
+				prim.face_list.push(
+					indices[1],
+					indices[3],
+					indices[2]
+				);
+
 
 			}
-
+			
 		}
 
 	});
+	
+	/*
+	model.vert_list = [
+		{"x":-3.69,"y":3.200000,"z":-1.530000,"u":0.621094,"v":0.703125},
+		{"x":-3.69,"y":3.200000,"z":1.530000,"u":0.542969,"v":0.703125},
+		{"x":-0.62,"y":5.050000,"z":-0.000000,"u":0.582031,"v":0.476562},
+		{"x":-0.00,"y":5.050000,"z":0.620000,"u":0.792969,"v":0.031250},
+		{"x":0.62,"y":5.050000,"z":-0.000000,"u":0.792969,"v":0.000000},
+		{"x":-0.00,"y":7.500000,"z":-0.000000,"u":0.832031,"v":0.031250},
+		{"x":-0.62,"y":5.050000,"z":-0.000000,"u":0.792969,"v":0.070312},
+		{"x":-2.46,"y":-5.000000,"z":-0.000000,"u":0.085938,"v":1.000000},
+		{"x":-4.51,"y":-2.950000,"z":1.870000,"u":0.003906,"v":0.882812},
+		{"x":-4.51,"y":-2.950000,"z":-1.870000,"u":0.167969,"v":0.882812},
+		{"x":4.51,"y":-2.950000,"z":1.870000,"u":0.167969,"v":0.882812},
+		{"x":2.46,"y":-5.000000,"z":-0.000000,"u":0.085938,"v":1.000000},
+		{"x":4.51,"y":-2.950000,"z":-1.870000,"u":0.003906,"v":0.882812},
+		{"x":-0.00,"y":-5.000000,"z":-2.460000,"u":0.085938,"v":1.000000},
+		{"x":-1.87,"y":-2.950000,"z":-4.510000,"u":0.003906,"v":0.882812},
+		{"x":1.87,"y":-2.950000,"z":-4.510000,"u":0.167969,"v":0.882812},
+		{"x":-1.87,"y":-2.950000,"z":4.510000,"u":0.167969,"v":0.875000},
+		{"x":-0.00,"y":-5.000000,"z":2.460000,"u":0.085938,"v":1.000000},
+		{"x":1.87,"y":-2.950000,"z":4.510000,"u":0.000000,"v":0.875000},
+		{"x":-1.53,"y":3.200000,"z":3.690000,"u":0.433594,"v":0.703125},
+		{"x":1.53,"y":3.200000,"z":3.690000,"u":0.355469,"v":0.703125},
+		{"x":-0.00,"y":5.050000,"z":0.620000,"u":0.394531,"v":0.476562},
+		{"x":3.69,"y":3.200000,"z":1.530000,"u":0.984375,"v":0.703125},
+		{"x":3.69,"y":3.200000,"z":-1.530000,"u":0.906250,"v":0.703125},
+		{"x":0.62,"y":5.050000,"z":-0.000000,"u":0.945312,"v":0.476562},
+		{"x":-0.00,"y":5.050000,"z":-0.610000,"u":0.792969,"v":0.031250},
+		{"x":-1.53,"y":3.200000,"z":-3.690000,"u":0.718750,"v":0.703125},
+		{"x":-0.00,"y":5.050000,"z":-0.610000,"u":0.757812,"v":0.476562},
+		{"x":1.53,"y":3.200000,"z":-3.690000,"u":0.796875,"v":0.703125}
+	];
 
-	// nextModel();
-	process.exit(0);
+	model.prim[0].face_list = [
+		0, 1, 2,
+		3, 4, 5,
+		3, 5, 6,
+		7, 8, 9,
+		10, 11, 12,
+		13, 14, 15,
+		16, 17, 18,
+		19, 20, 21,
+		22, 23, 24,
+		5, 25, 6,
+		26, 27, 28,
+		25, 5, 4
+	];
+	*/
+
+	// Create glTF to Export
+
+	var gltf = {
+		"asset" : {
+			"generator" : "DashGL Exporter",
+			"version" : "2.0"
+		},
+		"scene" : 0,
+		"scenes" : [
+			{
+				"nodes" : [
+					0
+				]
+			}
+		],
+		"nodes" : [
+			{
+				"mesh" : 0
+			}
+		],
+		"meshes" : [
+			{
+				"primitives" : []
+			}
+		],
+		"accessors" : [
+			{
+				"bufferView" : 0,
+				"byteOffset" : 0,
+				"componentType" : 5126,
+				"count" : model.vert_list.length,
+				"max" : [0,0,0],
+				"min" : [0,0,0],
+				"type" : "VEC3"
+			}, {
+				"bufferView" : 1,
+				"byteOffset" : 0,
+				"componentType" : 5126,
+				"count" : model.vert_list.length,
+				"type" : "VEC2"
+			}
+		],
+		"materials" : [
+
+		],
+		"textures" : [
+
+		],
+		"images": [
+
+		],
+		"bufferViews" : [
+			{
+				"buffer" : 0,
+				"byteOffset" : 0,
+				"byteLength" : model.vert_list.length * 20 - 8,
+				"byteStride" : 20
+			},
+			{
+				"buffer" : 0,
+				"byteOffset" : 12,
+				"byteLength" : model.vert_list.length * 20 - 12,
+				"byteStride" : 20
+			}
+		],
+		"buffers" : [
+
+		]
+	};
+
+	for(var i = 0; i < model.imgs.length; i++) {
+		gltf.materials.push({
+			"pbrMetallicRoughness" : {
+				"baseColorTexture" : {
+					"index" : i
+				},
+				"metallicFactor" : 0.0
+			},
+			"emissiveFactor" : [0.0,0.0,0.0],
+			"name" : model.imgs[i].name
+		});
+		
+		gltf.textures.push({
+			"source" : i
+		});
+
+		gltf.images.push({
+			"uri" : "data:image/png;base64," + model.imgs[i].base64
+		});
+	}
+
+	var vert_ofs = model.vert_list.length * 20;
+	var buff_len = vert_ofs;
+	var face_ofs = 0;
+
+	for(var i = 0; i < model.prim.length; i++) {
+		
+		gltf.meshes[0].primitives.push({
+			"attributes" : {
+				"POSITION" : 0,
+				"TEXCOORD_0" : 1
+			},
+			"indices" : i + 2,
+			"mode" : 4,
+			"material" : model.prim[i].mat
+		});
+
+		buff_len += model.prim[i].face_list.length * 2;
+
+		gltf.accessors.push({
+			"bufferView" : i + 2,
+			"byteOffset" : 0,
+			"componentType" : 5123,
+			"count" : model.prim[i].face_list.length,
+			"type" : "SCALAR"
+		});
+
+		gltf.bufferViews.push({
+			"buffer" : 0,
+			"byteOffset" : vert_ofs + face_ofs,
+			"byteLength" : model.prim[i].face_list.length * 2,
+		});
+		
+		face_ofs += model.prim[i].face_list.length * 2;
+		
+		break;
+	}
+	
+	var buffer = Buffer.alloc(buff_len);
+
+	for(var i = 0; i < model.vert_list.length; i++) {
+
+		if(model.vert_list[i].x < gltf.accessors[0].min[0]) {
+			gltf.accessors[0].min[0] = model.vert_list[i].x;
+		}
+		if(model.vert_list[i].y < gltf.accessors[0].min[1]) {
+			gltf.accessors[0].min[1] = model.vert_list[i].y;
+		}
+		if(model.vert_list[i].z < gltf.accessors[0].min[2]) {
+			gltf.accessors[0].min[2] = model.vert_list[i].z;
+		}
+
+		if(model.vert_list[i].x > gltf.accessors[0].max[0]) {
+			gltf.accessors[0].max[0] = model.vert_list[i].x;
+		}
+		if(model.vert_list[i].y > gltf.accessors[0].max[1]) {
+			gltf.accessors[0].max[1] = model.vert_list[i].y;
+		}
+		if(model.vert_list[i].z > gltf.accessors[0].max[2]) {
+			gltf.accessors[0].max[2] = model.vert_list[i].z;
+		}
+	
+		buffer.writeFloatLE(model.vert_list[i].x, i * 20 + 0);
+		buffer.writeFloatLE(model.vert_list[i].y, i * 20 + 4);
+		buffer.writeFloatLE(model.vert_list[i].z, i * 20 + 8);
+		buffer.writeFloatLE(model.vert_list[i].u, i * 20 + 12);
+		buffer.writeFloatLE(model.vert_list[i].v, i * 20 + 16);
+
+	}
+	
+	var ofs = model.vert_list.length * 20;
+
+	for(var i = 0; i < model.prim.length; i++) {
+	
+		if(i > 0) {
+			continue;
+		}
+
+		for(var k = 0; k < model.prim[i].face_list.length; k++) {
+			
+			buffer.writeUInt16LE(model.prim[i].face_list[k], ofs);
+			ofs += 2;
+
+		}
+
+	}
+	
+	gltf.buffers[0] = {
+		"byteLength" : buffer.length,
+		"uri":"data:application/octet-stream;base64,"+buffer.toString("base64")
+	};
+
+	var str = JSON.stringify(gltf, null, "\t");
+	fs.writeFileSync(name_lookup[model.index], str);
+
+	nextModel();
+	// process.exit(0);
 
 }, function() {
 

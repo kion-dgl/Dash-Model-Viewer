@@ -55,7 +55,7 @@ typedef struct {
 	uint8_t nb_tri;
 	uint8_t nb_quad;
 	uint8_t nb_vert;
-	uint8_t nop;
+	uint8_t bone;
 	uint32_t tri_ofs;
 	uint32_t quad_ofs;
 	uint32_t tex_page;

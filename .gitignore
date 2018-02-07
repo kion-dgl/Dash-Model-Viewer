@@ -10,4 +10,5 @@
 *.glb
 *.tmp
 *.json
+*.PNG
 node_modules/*

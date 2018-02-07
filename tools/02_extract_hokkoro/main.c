@@ -381,7 +381,9 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 					z = -0.01f * (float)vert_list[index].z;
 					u = (float)tri_list[j].coord[l].u / tex_u;
 					v = (float)tri_list[j].coord[l].v / tex_v;
-					
+				
+					printf("%.02f, %.02f, %.02f, %.02f, %.02f\n",x, y, z, u, v);
+
 					found = 0;
 
 					for(m = 0; m < model.nb_vert; m++) {
@@ -506,6 +508,8 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 			free(vert_list);
 			free(tri_list);
 			free(quad_list);
+			
+			break;
 
 		}
 
