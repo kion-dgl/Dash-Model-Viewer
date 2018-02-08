@@ -5,6 +5,92 @@ const path = require("path");
 const async = require("async");
 const PNG = require("pngjs").PNG;
 
+const M4_00 = 0;
+const M4_10 = 1;
+const M4_20 = 2;
+const M4_30 = 3;
+const M4_01 = 4;
+const M4_11 = 5;
+const M4_21 = 6;
+const M4_31 = 7;
+const M4_02 = 8;
+const M4_12 = 9;
+const M4_22 = 10;
+const M4_32 = 11;
+const M4_03 = 12;
+const M4_13 = 13;
+const M4_23 = 14;
+const M4_33 = 15;
+
+function mat4_translate(pos) {
+
+	var out = new Array(16);
+
+	out[M4_00] = 1.0;
+	out[M4_10] = 0.0;
+	out[M4_20] = 0.0;
+	out[M4_30] = 0.0;
+	
+	out[M4_01] = 0.0;
+	out[M4_11] = 1.0;
+	out[M4_21] = 0.0;
+	out[M4_31] = 0.0;
+	
+	out[M4_02] = 0.0;
+	out[M4_12] = 0.0;
+	out[M4_22] = 1.0;
+	out[M4_32] = 0.0;
+	
+	out[M4_03] = pos.x;
+	out[M4_13] = pos.y;
+	out[M4_23] = pos.z;
+	out[M4_33] = 1.0;
+
+	return out;
+
+}
+
+function mat4_multiply(a, b) {
+
+	var tmp = new Array(16);
+
+	tmp[M4_00] = a[M4_00]*b[M4_00]+a[M4_01]*b[M4_10]+a[M4_02]*b[M4_20]+a[M4_03]*b[M4_30];
+	tmp[M4_01] = a[M4_00]*b[M4_01]+a[M4_01]*b[M4_11]+a[M4_02]*b[M4_21]+a[M4_03]*b[M4_31];
+	tmp[M4_02] = a[M4_00]*b[M4_02]+a[M4_01]*b[M4_12]+a[M4_02]*b[M4_22]+a[M4_03]*b[M4_32];
+	tmp[M4_03] = a[M4_00]*b[M4_03]+a[M4_01]*b[M4_13]+a[M4_02]*b[M4_23]+a[M4_03]*b[M4_33];
+   
+	tmp[M4_10] = a[M4_10]*b[M4_00]+a[M4_11]*b[M4_10]+a[M4_12]*b[M4_20]+a[M4_13]*b[M4_30];
+	tmp[M4_11] = a[M4_10]*b[M4_01]+a[M4_11]*b[M4_11]+a[M4_12]*b[M4_21]+a[M4_13]*b[M4_31];
+	tmp[M4_12] = a[M4_10]*b[M4_02]+a[M4_11]*b[M4_12]+a[M4_12]*b[M4_22]+a[M4_13]*b[M4_32];
+	tmp[M4_13] = a[M4_10]*b[M4_03]+a[M4_11]*b[M4_13]+a[M4_12]*b[M4_23]+a[M4_13]*b[M4_33];
+ 
+	tmp[M4_20] = a[M4_20]*b[M4_00]+a[M4_21]*b[M4_10]+a[M4_22]*b[M4_20]+a[M4_23]*b[M4_30];
+	tmp[M4_21] = a[M4_20]*b[M4_01]+a[M4_21]*b[M4_11]+a[M4_22]*b[M4_21]+a[M4_23]*b[M4_31];
+	tmp[M4_22] = a[M4_20]*b[M4_02]+a[M4_21]*b[M4_12]+a[M4_22]*b[M4_22]+a[M4_23]*b[M4_32];
+	tmp[M4_23] = a[M4_20]*b[M4_03]+a[M4_21]*b[M4_13]+a[M4_22]*b[M4_23]+a[M4_23]*b[M4_33];
+ 
+	tmp[M4_30] = a[M4_30]*b[M4_00]+a[M4_31]*b[M4_10]+a[M4_32]*b[M4_20]+a[M4_33]*b[M4_30];
+	tmp[M4_31] = a[M4_30]*b[M4_01]+a[M4_31]*b[M4_11]+a[M4_32]*b[M4_21]+a[M4_33]*b[M4_31];
+	tmp[M4_32] = a[M4_30]*b[M4_02]+a[M4_31]*b[M4_12]+a[M4_32]*b[M4_22]+a[M4_33]*b[M4_32];
+	tmp[M4_33] = a[M4_30]*b[M4_03]+a[M4_31]*b[M4_13]+a[M4_32]*b[M4_23]+a[M4_33]*b[M4_33];
+
+	return tmp;
+
+}
+
+function mat4_transform( vec3, m ) {
+
+	var x = vec3.x*m[M4_00] + vec3.y*m[M4_10] + vec3.z*m[M4_20] + m[M4_03];
+	var y = vec3.x*m[M4_01] + vec3.y*m[M4_11] + vec3.z*m[M4_21] + m[M4_13];
+    var z = vec3.x*m[M4_02] + vec3.y*m[M4_12] + vec3.z*m[M4_22] + m[M4_23];
+
+	vec3.x = x;
+	vec3.y = y;
+	vec3.z = z;
+
+}
+
+
 /*
 
 Index Number of Primitives Bone Anim    Name     Image Page Pallet Page Texture
@@ -81,9 +167,6 @@ if(offset === null) {
 	process.exit(1);
 }
 
-var json_str = JSON.stringify(framebuffer, null, "\t");
-fs.writeFileSync("framebuffer.json", json_str);
-
 var memory_ofs = fp.readUInt32LE(offset + 0x0C);
 var nb_models = fp.readUInt32LE(offset + 0x800);
 
@@ -124,6 +207,9 @@ for(var i = 0; i < nb_models; i++) {
 
 }
 
+console.log("3 bone: 0x%s", model_list[3].bone_ofs.toString(16));
+console.log("4 bone: 0x%s", model_list[4].bone_ofs.toString(16));
+
 model_list = [
 	model_list[0],
 	model_list[1],
@@ -135,10 +221,51 @@ model_list = [
 	model_list[7]
 ];
 
+
 async.eachSeries(model_list, function(model, nextModel) {
+
+	console.log("Mesh position: %d", model.mesh_ofs);
 
 	var ofs = model.mesh_ofs;
 	model.nb_prim = fp.readUInt8(ofs + 0x11);
+
+	model.pos = [];
+	model.bones = [];
+
+	if(model.bone_ofs) {
+		var tmp = fp.readUInt32LE(model.bone_ofs);
+		tmp -= memory_ofs;
+		tmp += offset;
+		tmp += 0x800;
+		console.log("Bone start: 0x%s", tmp.toString(16));
+		
+		for(var i = 0; i < model.nb_prim; i++) {
+			var pos = {
+				"x" : fp.readInt16LE(tmp + 0) * -.01,
+				"y" : fp.readInt16LE(tmp + 2) * -.01,
+				"z" : fp.readInt16LE(tmp + 4) * -.01
+			};
+
+			if(i === 0){ 
+				pos.x = 0;
+				pos.y = 0;
+				pos.z = 0;
+			}
+			model.pos.push(pos);
+			model.bones.push(mat4_translate(pos));
+			tmp += 0x08;
+		}
+	} else {
+
+		for(var i = 0; i < model.nb_prim; i++) {
+			var pos = { "x" : 0, "y" : 0, "z" : 0 };
+			model.pos.push(pos);
+			model.bones.push(mat4_translate(pos));
+		}
+
+	}
+
+	console.log(model.pos);
 
 	model.prim = [];
 	model.mats = [];
@@ -158,7 +285,7 @@ async.eachSeries(model_list, function(model, nextModel) {
 			"nb_tri" : fp.readUInt8(ofs + 0x00),
 			"nb_quad" : fp.readUInt8(ofs + 0x01),
 			"nb_vert" : fp.readUInt8(ofs + 0x02),
-			"bone" : fp.readUInt8(ofs + 0x03) + 1,
+			"bone" : fp.readUInt8(ofs + 0x03),
 			"tri_ofs" : fp.readUInt32LE(ofs + 0x04),
 			"quad_ofs" : fp.readUInt32LE(ofs + 0x08),
 			"image_page" : fp.readUInt16LE(ofs + 0x0c),
@@ -189,7 +316,7 @@ async.eachSeries(model_list, function(model, nextModel) {
 		model.prim.push(prim);
 
 	}
-
+	
 	for(var i = 0; i < model.nb_prim; i++) {
 		
 		var image_page = model.prim[i].image_page;
@@ -325,6 +452,7 @@ async.eachSeries(model_list, function(model, nextModel) {
 			break;
 		}
 		
+		console.log("prim bone: %d", prim.bone);
 		var image = model.imgs[prim.mat];
 
 		var ofs = prim.vert_ofs;
@@ -334,13 +462,22 @@ async.eachSeries(model_list, function(model, nextModel) {
 
 		for(var i = 0; i < prim.nb_vert; i++) {
 			
-			vert_list.push({
+			var vert = {
 				"b" : prim.bone,
 				"x" : fp.readInt16LE(ofs + 0x00) * -0.01,
 				"y" : fp.readInt16LE(ofs + 0x02) * -0.01,
 				"z" : fp.readInt16LE(ofs + 0x04) * -0.01,
-			});
+			};
 			
+			// mat4_transform(vert, model.bones[prim.bone]);
+			
+			/*
+			vert.x += model.pos[prim.bone].x;
+			vert.y += model.pos[prim.bone].y;
+			vert.z += model.pos[prim.bone].z;
+			*/
+
+			vert_list.push(vert);
 			ofs += 0x08;
 		}
 		
@@ -388,27 +525,27 @@ async.eachSeries(model_list, function(model, nextModel) {
 					
 					for(var j = 0; j < model.vert_list.length; j++) {
 						
-						if(model.vert_list[j].b !== v.b) {
+						if(model.vert_list[j].b != v.b) {
 							continue;
 						}
 						
-						if(model.vert_list[j].x !== v.x) {
+						if(model.vert_list[j].x != v.x) {
 							continue;
 						}
 						
-						if(model.vert_list[j].y !== v.y) {
+						if(model.vert_list[j].y != v.y) {
 							continue;
 						}
 						
-						if(model.vert_list[j].z !== v.z) {
+						if(model.vert_list[j].z != v.z) {
 							continue;
 						}
 						
-						if(model.vert_list[j].u !== v.u) {
+						if(model.vert_list[j].u != v.u) {
 							continue;
 						}
 						
-						if(model.vert_list[j].v !== v.v) {
+						if(model.vert_list[j].v != v.v) {
 							continue;
 						}
 						
@@ -485,27 +622,27 @@ async.eachSeries(model_list, function(model, nextModel) {
 					
 					for(var j = 0; j < model.vert_list.length; j++) {
 						
-						if(model.vert_list[j].b !== v.b) {
+						if(model.vert_list[j].b != v.b) {
 							continue;
 						}
 						
-						if(model.vert_list[j].x !== v.x) {
+						if(model.vert_list[j].x != v.x) {
 							continue;
 						}
 						
-						if(model.vert_list[j].y !== v.y) {
+						if(model.vert_list[j].y != v.y) {
 							continue;
 						}
 						
-						if(model.vert_list[j].z !== v.z) {
+						if(model.vert_list[j].z != v.z) {
 							continue;
 						}
 						
-						if(model.vert_list[j].u !== v.u) {
+						if(model.vert_list[j].u != v.u) {
 							continue;
 						}
 						
-						if(model.vert_list[j].v !== v.v) {
+						if(model.vert_list[j].v != v.v) {
 							continue;
 						}
 						
@@ -557,9 +694,14 @@ async.eachSeries(model_list, function(model, nextModel) {
 				]
 			}
 		],
+		"skins" : [
+			{
+				"joints" : []
+			}
+		],
 		"nodes" : [
 			{
-				"mesh" : 0
+				"mesh" : 0,
 			}
 		],
 		"meshes" : [
@@ -611,6 +753,17 @@ async.eachSeries(model_list, function(model, nextModel) {
 
 		]
 	};
+
+	for(var i = 0; i < model.pos.length; i++) {
+		gltf.nodes.push({
+			"translation" : [
+				model.pos[i].x,
+				model.pos[i].y,
+				model.pos[i].z
+			]
+		});
+		gltf.skins[0].joints.push(i + 1);
+	}
 
 	for(var i = 0; i < model.imgs.length; i++) {
 		gltf.materials.push({
@@ -724,10 +877,6 @@ async.eachSeries(model_list, function(model, nextModel) {
 	var ofs = model.vert_list.length * 20;
 
 	for(var i = 0; i < model.prim.length; i++) {
-	
-		if(i > 0) {
-			continue;
-		}
 
 		for(var k = 0; k < model.prim[i].face_list.length; k++) {
 			

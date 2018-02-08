@@ -388,27 +388,27 @@ async.eachSeries(model_list, function(model, nextModel) {
 					
 					for(var j = 0; j < model.vert_list.length; j++) {
 						
-						if(model.vert_list[j].b !== v.b) {
+						if(model.vert_list[j].b != v.b) {
 							continue;
 						}
 						
-						if(model.vert_list[j].x !== v.x) {
+						if(model.vert_list[j].x != v.x) {
 							continue;
 						}
 						
-						if(model.vert_list[j].y !== v.y) {
+						if(model.vert_list[j].y != v.y) {
 							continue;
 						}
 						
-						if(model.vert_list[j].z !== v.z) {
+						if(model.vert_list[j].z != v.z) {
 							continue;
 						}
 						
-						if(model.vert_list[j].u !== v.u) {
+						if(model.vert_list[j].u != v.u) {
 							continue;
 						}
 						
-						if(model.vert_list[j].v !== v.v) {
+						if(model.vert_list[j].v != v.v) {
 							continue;
 						}
 						
@@ -485,27 +485,27 @@ async.eachSeries(model_list, function(model, nextModel) {
 					
 					for(var j = 0; j < model.vert_list.length; j++) {
 						
-						if(model.vert_list[j].b !== v.b) {
+						if(model.vert_list[j].b != v.b) {
 							continue;
 						}
 						
-						if(model.vert_list[j].x !== v.x) {
+						if(model.vert_list[j].x != v.x) {
 							continue;
 						}
 						
-						if(model.vert_list[j].y !== v.y) {
+						if(model.vert_list[j].y != v.y) {
 							continue;
 						}
 						
-						if(model.vert_list[j].z !== v.z) {
+						if(model.vert_list[j].z != v.z) {
 							continue;
 						}
 						
-						if(model.vert_list[j].u !== v.u) {
+						if(model.vert_list[j].u != v.u) {
 							continue;
 						}
 						
-						if(model.vert_list[j].v !== v.v) {
+						if(model.vert_list[j].v != v.v) {
 							continue;
 						}
 						
@@ -724,10 +724,6 @@ async.eachSeries(model_list, function(model, nextModel) {
 	var ofs = model.vert_list.length * 20;
 
 	for(var i = 0; i < model.prim.length; i++) {
-	
-		if(i > 0) {
-			continue;
-		}
 
 		for(var k = 0; k < model.prim[i].face_list.length; k++) {
 			

@@ -1,0 +1,24 @@
+Yesterday I was able to get a few basic models exported with all primitives in-
+tact with embedded textures. So the next step is to start applying bones. After
+looking over the gltf format it looks like there are a few additions I need to 
+make to the exports.
+
+First it looks like gltf refers to "bones" as "joints", and then each joint is
+defined as a node. On the node that defines the mesh, will need to include a 
+"skin" attribute which points to a definition where all of the joint-nodes are
+defined in an array. The mesh will then need to define two more attributes, 
+one being the joint, and the second being the weight. In our case, since 
+multiple bones probably don't affact the same primitives, we'll only be using
+a weight of 1.0f for all of them. 
+
+And then the last thing that worries me is the inverse bind matrices in the skin
+definition of gltf. I'm not exactly sure what it does or why I need it. The bone
+structure for Megaman Legends is such that there is only translation and one
+weight per primitive. So we can try leaving that out and see if we can get by 
+without it, otherwise, hopefully it won't be too hard to calculate.
+
+As for approach we have the orudakoitan, and chest which each have only two 
+primitives. Specifically the orudakoitan has no animations, so we can be sure 
+that there is no other information required. So that seems like the best place
+to start. Following that we have the hokkoro which has four feet, which should
+also be pretty simple to start with.

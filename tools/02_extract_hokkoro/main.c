@@ -509,8 +509,6 @@ void glTF_read_model(FILE *fp, PSX_EBD_File *file, PSX_Framebuffer *fb) {
 			free(tri_list);
 			free(quad_list);
 			
-			break;
-
 		}
 
 		// Export Model
