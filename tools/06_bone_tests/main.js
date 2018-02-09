@@ -231,9 +231,13 @@ async.eachSeries(model_list, function(model, nextModel) {
 
 	model.pos = [];
 	model.bones = [];
+	var tmp;
 
 	if(model.bone_ofs) {
-		var tmp = fp.readUInt32LE(model.bone_ofs);
+
+		console.log("Bones offset: 0x%s", model.bone_ofs.toString(16));
+
+		tmp = fp.readUInt32LE(model.bone_ofs);
 		tmp -= memory_ofs;
 		tmp += offset;
 		tmp += 0x800;
@@ -251,10 +255,18 @@ async.eachSeries(model_list, function(model, nextModel) {
 				pos.y = 0;
 				pos.z = 0;
 			}
+
+			if(Math.abs(pos.x) > 200) {
+				pos.x = 0;
+				pos.y = 0;
+				pos.z = 0;
+			}
+
 			model.pos.push(pos);
 			model.bones.push(mat4_translate(pos));
 			tmp += 0x08;
 		}
+
 	} else {
 
 		for(var i = 0; i < model.nb_prim; i++) {
@@ -264,8 +276,21 @@ async.eachSeries(model_list, function(model, nextModel) {
 		}
 
 	}
-
+	
 	console.log(model.pos);
+
+	tmp = ofs + 0x14;
+	for(var i = 0; i < model.nb_prim - 1; i++) {
+		
+		var bone = fp.readUInt8(tmp);
+		var parent = fp.readUInt8(tmp + 1);
+		
+		model.pos[bone].x += model.pos[parent].x;
+		model.pos[bone].y += model.pos[parent].y;
+		model.pos[bone].z += model.pos[parent].z;
+		
+		tmp += 4;
+	}
 
 	model.prim = [];
 	model.mats = [];
@@ -471,11 +496,9 @@ async.eachSeries(model_list, function(model, nextModel) {
 			
 			// mat4_transform(vert, model.bones[prim.bone]);
 			
-			/*
 			vert.x += model.pos[prim.bone].x;
 			vert.y += model.pos[prim.bone].y;
 			vert.z += model.pos[prim.bone].z;
-			*/
 
 			vert_list.push(vert);
 			ofs += 0x08;
