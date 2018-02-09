@@ -1,0 +1,18 @@
+When getting started this morning I was unexpectedly able to get the hierarchy 
+for models working. In Megaman Legeneds primitives only have one bone or joint. 
+Initially that bone only has translation. And each bone (aside from bone 0), 
+has a parent from which is inheriets translation.
+
+So basically all I had to do was add the x,y,z translations of the parent bone,
+and then add each of these values to the vertices in their respective primitives
+to get a tpose for the model.
+
+In terms of methodology, I'm transforming the verices in my program rather than
+using the gltf file format. The problem that I ran into was that gltf expects 
+four vertex weights as a vec4 format, when I'm only dealing with one weight.
+So I need to look into the format more in order to utilize it. 
+
+That aside, I'm pretty happy with the results for now, as the export format can
+be modified and changed. The next issue I need to work on is finding the x and
+y image buffer coordinates for the model being used. That should allow me to 
+test other files.
